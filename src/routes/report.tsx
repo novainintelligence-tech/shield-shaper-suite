@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScanRunner } from "@/components/scan-runner";
 import { EmptyScanState } from "@/components/empty-scan-state";
 import { RawBlock } from "@/components/raw-block";
+import { FindingValidator } from "@/components/finding-validator";
 import { useLatestScan } from "@/hooks/use-scans";
 import { buildEngagementSummary, type RiskRating } from "@/lib/engagement";
 import { downloadEngagementPdf } from "@/lib/report-pdf";
@@ -167,6 +168,10 @@ function ReportPage() {
                   <div className="md:col-span-3">
                     <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Remediation</div>
                     <p className="text-sm">{f.remediation}</p>
+                  </div>
+                  <div className="md:col-span-3">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Proof of concept</div>
+                    <FindingValidator finding={f} targetUrl={scan.targetUrl} />
                   </div>
                 </div>
               </div>
