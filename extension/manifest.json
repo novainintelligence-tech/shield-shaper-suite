@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "NSL Session Capture",
+  "version": "1.0.0",
+  "description": "Capture cookies (including HttpOnly), localStorage, and sessionStorage from your open tabs for analysis in NOVAIN Security Lab.",
+  "permissions": ["cookies", "tabs", "storage", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NSL Session Capture"
+  },
+  "icons": { "48": "icon.png", "128": "icon.png" }
+}
