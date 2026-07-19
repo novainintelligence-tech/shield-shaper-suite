@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as XssRouteImport } from './routes/xss'
+import { Route as ValidatorRouteImport } from './routes/validator'
 import { Route as TlsRouteImport } from './routes/tls'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SessionsRouteImport } from './routes/sessions'
@@ -29,6 +30,11 @@ import { Route as ScanScanIdRouteImport } from './routes/scan.$scanId'
 const XssRoute = XssRouteImport.update({
   id: '/xss',
   path: '/xss',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ValidatorRoute = ValidatorRouteImport.update({
+  id: '/validator',
+  path: '/validator',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TlsRoute = TlsRouteImport.update({
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
+  '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
 }
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
+  '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
 }
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
+  '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
 }
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
+    | '/validator'
     | '/xss'
     | '/scan/$scanId'
   fileRoutesByTo: FileRoutesByTo
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
+    | '/validator'
     | '/xss'
     | '/scan/$scanId'
   id:
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
+    | '/validator'
     | '/xss'
     | '/scan/$scanId'
   fileRoutesById: FileRoutesById
@@ -234,6 +246,7 @@ export interface RootRouteChildren {
   SessionsRoute: typeof SessionsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TlsRoute: typeof TlsRoute
+  ValidatorRoute: typeof ValidatorRoute
   XssRoute: typeof XssRoute
   ScanScanIdRoute: typeof ScanScanIdRoute
 }
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/xss'
       fullPath: '/xss'
       preLoaderRoute: typeof XssRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/validator': {
+      id: '/validator'
+      path: '/validator'
+      fullPath: '/validator'
+      preLoaderRoute: typeof ValidatorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tls': {
@@ -370,6 +390,7 @@ const rootRouteChildren: RootRouteChildren = {
   SessionsRoute: SessionsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TlsRoute: TlsRoute,
+  ValidatorRoute: ValidatorRoute,
   XssRoute: XssRoute,
   ScanScanIdRoute: ScanScanIdRoute,
 }
