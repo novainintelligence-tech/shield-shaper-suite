@@ -270,8 +270,8 @@ export const runReauthProbe = createServerFn({ method: "POST" })
     let logoutReason: string | null = null;
     if (data.logoutUrl) {
       const snapshotJar = new Map(jar);
-      await step("Logout", "GET", data.logoutUrl, {}, jar);
-      steps.push(steps.pop()!);
+      const logoutStep = await step("Logout", "GET", data.logoutUrl, {}, jar);
+      steps.push(logoutStep);
       // Replay pre-logout jar (server-side invalidation test)
       const replay = await step(
         "Replay pre-logout cookies to protected URL",
