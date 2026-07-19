@@ -472,24 +472,26 @@ export const runScan = createServerFn({ method: "POST" })
   .inputValidator((data: { url: string }) => urlSchema.parse(data))
   .handler(async ({ data, context }): Promise<ScanResult> => {
     const scan = await performScan(data.url);
+    const payload = {
+      user_id: context.userId,
+      target_url: scan.targetUrl,
+      target_host: scan.targetHost,
+      status: scan.status,
+      duration_ms: scan.durationMs,
+      overall_score: scan.overallScore,
+      scores: scan.scores,
+      headers: scan.headers,
+      cookies: scan.cookies,
+      tls: scan.tls,
+      csrf: scan.csrf,
+      xss: scan.xss,
+      sessions: scan.sessions,
+      error: scan.error,
+    };
     const { data: row, error } = await context.supabase
       .from("scans")
-      .insert({
-        user_id: context.userId,
-        target_url: scan.targetUrl,
-        target_host: scan.targetHost,
-        status: scan.status,
-        duration_ms: scan.durationMs,
-        overall_score: scan.overallScore,
-        scores: scan.scores as unknown as Record<string, unknown>,
-        headers: scan.headers as unknown as Record<string, unknown>[],
-        cookies: scan.cookies as unknown as Record<string, unknown>[],
-        tls: scan.tls as unknown as Record<string, unknown>,
-        csrf: scan.csrf as unknown as Record<string, unknown>[],
-        xss: scan.xss as unknown as Record<string, unknown>[],
-        sessions: scan.sessions as unknown as Record<string, unknown>[],
-        error: scan.error,
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .insert(payload as any)
       .select("id, created_at")
       .single();
     if (error) throw new Error(error.message);
