@@ -47,18 +47,25 @@ function riskColor(risk: string): [number, number, number] {
   return [82, 96, 122];
 }
 
-function finding(doc: jsPDF, c: Cursor, i: number, f: Finding) {
+function finding(doc: jsPDF, c: Cursor, i: number, f: Finding, variant: ReportVariant) {
   ensure(doc, c, 60);
   text(doc, c, `${i}. [${f.risk}] ${f.title}`, { size: 11, bold: true, color: riskColor(f.risk) });
-  text(doc, c, `Module: ${f.module}  ·  CVSS: ${f.cvss.toFixed(1)}  ·  Severity: ${f.severity.toUpperCase()}`, { size: 9, color: [82, 96, 122] });
-  text(doc, c, "Evidence:", { size: 9, bold: true });
-  text(doc, c, f.evidence, { size: 9, color: [70, 80, 100] });
+  text(doc, c, `Module: ${f.module}  ·  CVSS 3.1: ${f.cvss.toFixed(1)}  ·  Severity: ${f.severity.toUpperCase()}`, { size: 9, color: [82, 96, 122] });
+  if (variant === "technical") {
+    text(doc, c, f.cvssVector, { size: 8, color: [110, 120, 140] });
+  }
   text(doc, c, "Impact:", { size: 9, bold: true });
   text(doc, c, f.impact, { size: 9 });
+  if (variant === "technical") {
+    text(doc, c, "Evidence:", { size: 9, bold: true });
+    text(doc, c, f.evidence, { size: 9, color: [70, 80, 100] });
+  }
   text(doc, c, "Remediation:", { size: 9, bold: true });
   text(doc, c, f.remediation, { size: 9 });
   c.y += 6;
 }
+
+export type ReportVariant = "executive" | "technical";
 
 export function generateEngagementPdf(scan: ScanResult): jsPDF {
   const s = buildEngagementSummary(scan);
