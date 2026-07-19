@@ -652,6 +652,117 @@ export const runStandalonePoc = createServerFn({ method: "POST" })
     }
   });
 
+// ---------- restricted-path discovery ----------
+
+export interface DiscoveredLink {
+  url: string;
+  path: string;
+  source: "crawl" | "wordlist";
+  keyword: string;
+  status: number | null;
+  bodyBytes: number;
+  looksRestricted: boolean;
+  reason: string;
+}
+
+const RESTRICTED_KEYWORDS = [
+  "admin", "administrator", "manager", "management", "console", "dashboard",
+  "backend", "portal", "internal", "staff", "moderator", "root", "sysadmin",
+  "control", "controlpanel", "cpanel", "wp-admin", "settings", "config",
+  "users", "accounts", "billing", "invoice", "reports", "audit", "logs",
+  "api/admin", "api/internal", "api/v1/admin", "api/v1/users",
+];
+
+const COMMON_PATHS = [
+  "/admin", "/admin/", "/administrator", "/manager", "/management",
+  "/dashboard", "/console", "/backend", "/portal", "/internal", "/staff",
+  "/wp-admin", "/wp-login.php", "/cpanel", "/phpmyadmin", "/pma",
+  "/control", "/controlpanel", "/settings", "/config", "/configuration",
+  "/users", "/accounts", "/billing", "/reports", "/audit", "/logs",
+  "/api/admin", "/api/internal", "/api/v1/admin", "/api/v1/users",
+  "/api/v1/accounts", "/graphql", "/actuator", "/actuator/env",
+  "/.env", "/.git/config",
+];
+
+function classifyRestricted(status: number | null, bodyBytes: number): { restricted: boolean; reason: string } {
+  if (status === 401 || status === 403) return { restricted: true, reason: `HTTP ${status} — auth required` };
+  if (status === 302 || status === 301 || status === 307 || status === 308) return { restricted: true, reason: `HTTP ${status} — redirect (likely to login)` };
+  if (status && status >= 200 && status < 300 && bodyBytes > 0) return { restricted: false, reason: `HTTP ${status} — publicly reachable (${bodyBytes}B)` };
+  if (status === 404) return { restricted: false, reason: "HTTP 404 — not found" };
+  return { restricted: false, reason: `HTTP ${status ?? "no response"}` };
+}
+
+const DiscoverInput = z.object({
+  targetUrl: z.string().url(),
+  includeWordlist: z.boolean().optional().default(true),
+  maxLinks: z.number().int().min(1).max(60).optional().default(40),
+});
+
+export const discoverRestrictedLinks = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: z.infer<typeof DiscoverInput>) => DiscoverInput.parse(data))
+  .handler(async ({ data }): Promise<{ links: DiscoveredLink[]; crawledFrom: string; crawlStatus: number | null }> => {
+    const origin = new URL(data.targetUrl).origin;
+    const found = new Map<string, DiscoveredLink>();
+
+    // 1. Crawl the target page for hrefs whose text or path contains a restricted keyword
+    const s1 = await probeStep("Crawl target for restricted-looking links", "GET", data.targetUrl);
+    const body = s1.bodySnippet;
+    const anchorRe = /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = anchorRe.exec(body)) !== null) {
+      const href = m[1];
+      const label = m[2].replace(/<[^>]+>/g, "").trim().toLowerCase();
+      if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) continue;
+      let abs: string;
+      try { abs = new URL(href, data.targetUrl).toString(); } catch { continue; }
+      if (new URL(abs).origin !== origin) continue;
+      const p = new URL(abs).pathname.toLowerCase();
+      const kw = RESTRICTED_KEYWORDS.find((k) => p.includes(k) || label.includes(k));
+      if (!kw) continue;
+      if (!found.has(abs)) {
+        found.set(abs, {
+          url: abs, path: new URL(abs).pathname,
+          source: "crawl", keyword: kw,
+          status: null, bodyBytes: 0, looksRestricted: false, reason: "pending",
+        });
+      }
+      if (found.size >= data.maxLinks) break;
+    }
+
+    // 2. Wordlist expansion
+    if (data.includeWordlist) {
+      for (const p of COMMON_PATHS) {
+        if (found.size >= data.maxLinks) break;
+        const abs = new URL(p, origin).toString();
+        if (!found.has(abs)) {
+          const kw = RESTRICTED_KEYWORDS.find((k) => p.toLowerCase().includes(k)) ?? p.replace(/^\//, "");
+          found.set(abs, {
+            url: abs, path: p, source: "wordlist", keyword: kw,
+            status: null, bodyBytes: 0, looksRestricted: false, reason: "pending",
+          });
+        }
+      }
+    }
+
+    // 3. HEAD-probe each candidate in parallel batches to classify
+    const links = Array.from(found.values());
+    const CONC = 6;
+    for (let i = 0; i < links.length; i += CONC) {
+      const slice = links.slice(i, i + CONC);
+      await Promise.all(slice.map(async (l) => {
+        const step = await probeStep(`Probe ${l.path}`, "GET", l.url, {}, 6000);
+        l.status = step.status;
+        l.bodyBytes = step.bodyBytes;
+        const cls = classifyRestricted(step.status, step.bodyBytes);
+        l.looksRestricted = cls.restricted;
+        l.reason = cls.reason;
+      }));
+    }
+
+    return { links, crawledFrom: data.targetUrl, crawlStatus: s1.status };
+  });
+
 // ---------- dispatcher ----------
 
 export const runValidation = createServerFn({ method: "POST" })

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { PlayCircle, Loader2, FileDown, Target, ShieldAlert } from "lucide-react";
+import { PlayCircle, Loader2, FileDown, Target, ShieldAlert, Radar, Link2 } from "lucide-react";
 
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,10 @@ import { FindingValidator, isActiveFinding } from "@/components/finding-validato
 import { useLatestScan } from "@/hooks/use-scans";
 import { buildFindings, type RiskRating } from "@/lib/engagement";
 import { useServerFn } from "@tanstack/react-start";
-import { runValidation, runStandalonePoc, POC_LIBRARY, type ValidationResult, type Verdict } from "@/lib/validator.functions";
+import {
+  runValidation, runStandalonePoc, discoverRestrictedLinks, POC_LIBRARY,
+  type ValidationResult, type Verdict, type DiscoveredLink,
+} from "@/lib/validator.functions";
 import { toCurl } from "@/lib/validator-command";
 import { downloadValidatorPdf } from "@/lib/validator-pdf";
 import { toast } from "sonner";
@@ -26,7 +29,7 @@ export const Route = createFileRoute("/validator")({
   head: () => ({
     meta: [
       { title: "PoC Validator · NOVAIN Security Lab" },
-      { name: "description", content: "Execute proof-of-concept validation against every finding from the latest scan to distinguish confirmed vulnerabilities from theoretical ones." },
+      { name: "description", content: "Discover restricted URLs and execute the full PoC library against every finding and every discovered link." },
     ],
   }),
   component: ValidatorPage,
@@ -48,13 +51,16 @@ const verdictClass: Record<Verdict, string> = {
   error: "border-critical/50 text-critical bg-critical/10",
 };
 
+type PerLinkResults = Record<string, Record<string, ValidationResult>>; // url -> pocId -> result
+
 function ValidatorPage() {
   const { data: scan } = useLatestScan();
   const [authorize, setAuthorize] = useState(false);
-  const [results, setResults] = useState<Record<string, ValidationResult>>({});
+  const [findingResults, setFindingResults] = useState<Record<string, ValidationResult>>({});
   const [batchBusy, setBatchBusy] = useState(false);
   const run = useServerFn(runValidation);
   const runStandalone = useServerFn(runStandalonePoc);
+  const discover = useServerFn(discoverRestrictedLinks);
 
   const findings = useMemo(() => (scan ? buildFindings(scan) : []), [scan]);
 
@@ -62,7 +68,13 @@ function ValidatorPage() {
   const [standaloneUrl, setStandaloneUrl] = useState<string>(scan?.targetUrl ?? "https://");
   const [standaloneResults, setStandaloneResults] = useState<Record<string, ValidationResult>>({});
   const [standaloneBusy, setStandaloneBusy] = useState<string | null>(null);
-  const [standaloneBatchBusy, setStandaloneBatchBusy] = useState(false);
+
+  // Discovery + per-link fanout
+  const [discovering, setDiscovering] = useState(false);
+  const [discovered, setDiscovered] = useState<DiscoveredLink[]>([]);
+  const [fanoutBusy, setFanoutBusy] = useState(false);
+  const [fanoutProgress, setFanoutProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  const [perLink, setPerLink] = useState<PerLinkResults>({});
 
   const runOnePoc = async (pocId: string) => {
     try { new URL(standaloneUrl); } catch { toast.error("Enter a valid URL"); return; }
@@ -80,9 +92,11 @@ function ValidatorPage() {
     }
   };
 
-  const runAllStandaloneSafe = async () => {
+  // Runs entire PoC library against the standalone URL AND every scan finding in one shot.
+  const runEverything = async () => {
     try { new URL(standaloneUrl); } catch { toast.error("Enter a valid URL"); return; }
-    setStandaloneBatchBusy(true);
+    setBatchBusy(true);
+    // Standalone library
     for (const p of POC_LIBRARY) {
       if (p.active && !authorize) continue;
       try {
@@ -90,29 +104,66 @@ function ValidatorPage() {
         setStandaloneResults((prev) => ({ ...prev, [p.id]: r }));
       } catch { /* keep going */ }
     }
-    setStandaloneBatchBusy(false);
-    toast.success("Standalone batch complete");
-  };
-
-  const runAllSafe = async () => {
-    if (!scan) return;
-    setBatchBusy(true);
-    const safe = findings.filter((f) => !isActiveFinding(f));
-    for (const f of safe) {
-      try {
-        const pathHint = f.id.startsWith("recon-") ? f.evidence.match(/https?:\/\/[^\s]+/)?.[0] : undefined;
-        const r = await run({ data: { findingId: f.id, targetUrl: scan.targetUrl, path: pathHint, authorizeActive: false } });
-        setResults((prev) => ({ ...prev, [f.id]: r }));
-      } catch { toast.error(`Failed: ${f.title}`); }
+    // Scan findings
+    if (scan) {
+      for (const f of findings) {
+        if (isActiveFinding(f) && !authorize) continue;
+        try {
+          const pathHint = f.id.startsWith("csrf-") ? f.id.slice(5)
+            : f.id.startsWith("recon-") ? f.evidence.match(/https?:\/\/[^\s]+/)?.[0]
+            : undefined;
+          const r = await run({ data: { findingId: f.id, targetUrl: scan.targetUrl, path: pathHint, authorizeActive: authorize } });
+          setFindingResults((prev) => ({ ...prev, [f.id]: r }));
+        } catch { /* keep going */ }
+      }
     }
     setBatchBusy(false);
-    toast.success(`Ran ${safe.length} safe PoCs`);
+    toast.success("Combined run complete");
+  };
+
+  const runDiscovery = async () => {
+    try { new URL(standaloneUrl); } catch { toast.error("Enter a valid URL first"); return; }
+    setDiscovering(true);
+    try {
+      const res = await discover({ data: { targetUrl: standaloneUrl, includeWordlist: true, maxLinks: 40 } });
+      setDiscovered(res.links);
+      toast.success(`Discovered ${res.links.length} candidate link${res.links.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast.error(`Discovery failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  // Run entire PoC library against every discovered link (skip active PoCs unless authorized).
+  const runLibraryOnAllLinks = async () => {
+    if (discovered.length === 0) { toast.error("Run discovery first"); return; }
+    const libs = POC_LIBRARY.filter((p) => !p.active || authorize);
+    const total = discovered.length * libs.length;
+    setFanoutBusy(true);
+    setFanoutProgress({ done: 0, total });
+    let done = 0;
+    for (const link of discovered) {
+      for (const p of libs) {
+        try {
+          const r = await runStandalone({ data: { url: link.url, pocId: p.id, authorizeActive: authorize } });
+          setPerLink((prev) => ({
+            ...prev,
+            [link.url]: { ...(prev[link.url] ?? {}), [p.id]: r },
+          }));
+        } catch { /* keep going */ }
+        done++;
+        setFanoutProgress({ done, total });
+      }
+    }
+    setFanoutBusy(false);
+    toast.success(`Ran ${libs.length} PoCs against ${discovered.length} links`);
   };
 
   const exportPdf = () => {
     if (!scan) return;
     const entries = findings
-      .map((f) => ({ finding: f, result: results[f.id] }))
+      .map((f) => ({ finding: f, result: findingResults[f.id] }))
       .filter((e): e is { finding: typeof e.finding; result: ValidationResult } => Boolean(e.result));
     if (entries.length === 0) { toast.error("No validations to export", { description: "Run at least one PoC first." }); return; }
     try {
@@ -126,21 +177,19 @@ function ValidatorPage() {
       <PageHeader
         eyebrow="Validation"
         title="PoC Validator"
-        description={scan ? `${scan.targetHost} · re-issue requests against each finding, or run PoCs against any URL.` : "Run proof-of-concept probes against any authorized URL."}
+        description={scan ? `${scan.targetHost} · combined runner across scan findings, standalone URL, and discovered restricted links.` : "Run proof-of-concept probes against any authorized URL."}
         actions={
           <>
             <ScanRunner label={scan ? "Rescan" : "Run scan"} />
+            <Button size="sm" variant="default" disabled={batchBusy} onClick={runEverything}>
+              {batchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              Run everything (library + findings)
+            </Button>
             {scan && (
-              <>
-                <Button size="sm" variant="outline" disabled={batchBusy || findings.length === 0} onClick={runAllSafe}>
-                  {batchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                  Run all safe PoCs
-                </Button>
-                <Button size="sm" variant="outline" disabled={Object.keys(results).length === 0} onClick={exportPdf}>
-                  <FileDown className="h-4 w-4" />
-                  Export PDF
-                </Button>
-              </>
+              <Button size="sm" variant="outline" disabled={Object.keys(findingResults).length === 0} onClick={exportPdf}>
+                <FileDown className="h-4 w-4" />
+                Export PDF
+              </Button>
             )}
           </>
         }
@@ -153,12 +202,12 @@ function ValidatorPage() {
         <CardContent className="space-y-2 text-sm">
           <p className="text-muted-foreground">
             Only run PoCs against systems you own or have explicit written authorization to test.
-            Safe PoCs perform read-only probes. Active PoCs may issue state-changing requests.
+            Enabling this checkbox unlocks every PoC in the library (including active probes) for both the standalone URL and each discovered link.
           </p>
           <div className="flex items-center gap-2">
             <Checkbox id="auth-global" checked={authorize} onCheckedChange={(v) => setAuthorize(v === true)} />
             <Label htmlFor="auth-global" className="text-sm">
-              I own or have written authorization to test the target URL and authorize active probes.
+              I own or have written authorization to test the target and authorize all active probes.
             </Label>
           </div>
         </CardContent>
@@ -171,10 +220,6 @@ function ValidatorPage() {
             <CardTitle className="text-sm flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" /> Standalone probes · run against any URL
             </CardTitle>
-            <Button size="sm" variant="outline" disabled={standaloneBatchBusy} onClick={runAllStandaloneSafe}>
-              {standaloneBatchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-              Run entire PoC library
-            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -185,11 +230,16 @@ function ValidatorPage() {
               placeholder="https://example.com/path?query"
               className="h-9 font-mono text-xs flex-1 min-w-[280px]"
             />
+            <Button size="sm" variant="outline" disabled={discovering} onClick={runDiscovery}>
+              {discovering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
+              Discover restricted links
+            </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {POC_LIBRARY.map((p) => {
               const r = standaloneResults[p.id];
               const busy = standaloneBusy === p.id;
+              const disabled = busy || (p.active && !authorize);
               return (
                 <div key={p.id} className="rounded-md border border-border/60 bg-surface/40 p-3 space-y-2">
                   <div className="flex items-start justify-between gap-2">
@@ -205,7 +255,7 @@ function ValidatorPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{p.desc}</p>
                     </div>
-                    <Button size="sm" variant={p.active ? "destructive" : "outline"} disabled={busy || (p.active && !authorize)} onClick={() => runOnePoc(p.id)}>
+                    <Button size="sm" variant={p.active ? "destructive" : "outline"} disabled={disabled} onClick={() => runOnePoc(p.id)}>
                       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
                       Run
                     </Button>
@@ -236,6 +286,64 @@ function ValidatorPage() {
         </CardContent>
       </Card>
 
+      {/* Discovered restricted links */}
+      {discovered.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-primary" /> Discovered restricted-looking links ({discovered.length})
+              </CardTitle>
+              <Button size="sm" variant="default" disabled={fanoutBusy} onClick={runLibraryOnAllLinks}>
+                {fanoutBusy
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {fanoutProgress.done}/{fanoutProgress.total}</>
+                  : <><PlayCircle className="h-4 w-4" /> Run entire library on every link</>}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Crawled the target for anchors matching admin / manager / dashboard / etc., plus a common-path wordlist.
+              Each link was HEAD-probed to classify whether it looks restricted (401/403/redirect) or publicly reachable.
+              Clicking the batch button will run every enabled PoC against every URL below.
+            </p>
+            <div className="space-y-2">
+              {discovered.map((l) => {
+                const results = perLink[l.url] ?? {};
+                const confirmedCount = Object.values(results).filter((r) => r.verdict === "confirmed").length;
+                return (
+                  <div key={l.url} className="rounded-md border border-border/60 bg-surface/40 p-3 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={l.looksRestricted ? "border-warning/40 text-warning bg-warning/5" : "border-border text-muted-foreground"}>
+                        {l.looksRestricted ? "restricted" : "reachable"}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px]">{l.source}</Badge>
+                      <Badge variant="outline" className="text-[10px]">kw: {l.keyword}</Badge>
+                      <span className="font-mono text-xs break-all">{l.url}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{l.reason}</span>
+                    </div>
+                    {Object.keys(results).length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1 border-t border-border/60">
+                        {confirmedCount > 0 && (
+                          <Badge variant="outline" className={verdictClass.confirmed}>
+                            {confirmedCount} confirmed
+                          </Badge>
+                        )}
+                        {Object.entries(results).map(([pocId, r]) => (
+                          <Badge key={pocId} variant="outline" className={`${verdictClass[r.verdict]} text-[10px]`} title={r.summary}>
+                            {pocId}: {r.verdict}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Scan-driven findings section */}
       {scan ? (
         <Card>
@@ -260,8 +368,8 @@ function ValidatorPage() {
                     finding={f}
                     targetUrl={scan.targetUrl}
                     globalAuthorize={authorize}
-                    presetResult={results[f.id] ?? null}
-                    onResult={(r) => setResults((prev) => ({ ...prev, [f.id]: r }))}
+                    presetResult={findingResults[f.id] ?? null}
+                    onResult={(r) => setFindingResults((prev) => ({ ...prev, [f.id]: r }))}
                   />
                 </div>
               ))
