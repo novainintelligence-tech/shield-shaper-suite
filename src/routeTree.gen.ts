@@ -27,6 +27,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ScanScanIdRouteImport } from './routes/scan.$scanId'
+import { Route as ApiPublicCiScanRouteImport } from './routes/api/public/ci/scan'
 
 const XssRoute = XssRouteImport.update({
   id: '/xss',
@@ -118,6 +119,11 @@ const ScanScanIdRoute = ScanScanIdRouteImport.update({
   path: '/scan/$scanId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCiScanRoute = ApiPublicCiScanRouteImport.update({
+  id: '/api/public/ci/scan',
+  path: '/api/public/ci/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
+  '/api/public/ci/scan': typeof ApiPublicCiScanRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
+  '/api/public/ci/scan': typeof ApiPublicCiScanRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/validator': typeof ValidatorRoute
   '/xss': typeof XssRoute
   '/scan/$scanId': typeof ScanScanIdRoute
+  '/api/public/ci/scan': typeof ApiPublicCiScanRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/validator'
     | '/xss'
     | '/scan/$scanId'
+    | '/api/public/ci/scan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/validator'
     | '/xss'
     | '/scan/$scanId'
+    | '/api/public/ci/scan'
   id:
     | '__root__'
     | '/'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/validator'
     | '/xss'
     | '/scan/$scanId'
+    | '/api/public/ci/scan'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   ValidatorRoute: typeof ValidatorRoute
   XssRoute: typeof XssRoute
   ScanScanIdRoute: typeof ScanScanIdRoute
+  ApiPublicCiScanRoute: typeof ApiPublicCiScanRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScanScanIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/ci/scan': {
+      id: '/api/public/ci/scan'
+      path: '/api/public/ci/scan'
+      fullPath: '/api/public/ci/scan'
+      preLoaderRoute: typeof ApiPublicCiScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   ValidatorRoute: ValidatorRoute,
   XssRoute: XssRoute,
   ScanScanIdRoute: ScanScanIdRoute,
+  ApiPublicCiScanRoute: ApiPublicCiScanRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

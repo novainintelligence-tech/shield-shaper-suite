@@ -629,7 +629,7 @@ function scoreRows(items: Array<{ severity: Severity }>): number {
 
 // ---------- Full scan ----------
 
-async function performScan(rawUrl: string): Promise<Omit<ScanResult, "id" | "createdAt">> {
+export async function performScan(rawUrl: string): Promise<Omit<ScanResult, "id" | "createdAt">> {
   const url = new URL(rawUrl);
   const start = Date.now();
 
