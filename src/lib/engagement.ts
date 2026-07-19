@@ -1,5 +1,6 @@
 import type { ScanResult } from "./scan-types";
 import type { Severity } from "@/components/severity-badge";
+import { rateFinding, type Cvss31Metrics } from "./cvss";
 
 export type RiskRating = "Critical" | "High" | "Medium" | "Low" | "Info";
 
@@ -10,6 +11,8 @@ export interface Finding {
   severity: Severity;
   risk: RiskRating;
   cvss: number;
+  cvssVector: string;
+  cvssMetrics: Cvss31Metrics;
   evidence: string;
   impact: string;
   remediation: string;
