@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Cookie,
@@ -10,7 +10,10 @@ import {
   ScrollText,
   ShieldCheck,
   LogIn,
+  LogOut,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
   Sidebar,
@@ -24,6 +27,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useSession } from "@/hooks/use-session";
+import { supabase } from "@/integrations/supabase/client";
 
 const overview = [{ title: "Dashboard", url: "/", icon: LayoutDashboard }];
 
@@ -34,13 +39,24 @@ const modules = [
   { title: "Session Security", url: "/sessions", icon: KeyRound },
   { title: "HTTP Headers", url: "/headers", icon: ServerCog },
   { title: "TLS Checker", url: "/tls", icon: LockKeyhole },
-  { title: "Auth Audit", url: "/audit", icon: ScrollText },
+  { title: "Scan History", url: "/audit", icon: ScrollText },
 ];
 
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const isActive = (path: string) =>
     path === "/" ? currentPath === "/" : currentPath.startsWith(path);
+  const { session, user } = useSession();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const signOut = async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await supabase.auth.signOut();
+    toast.success("Signed out");
+    navigate({ to: "/auth", replace: true });
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -98,14 +114,30 @@ export function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={isActive("/auth")} tooltip="Sign in">
-              <Link to="/auth">
-                <LogIn />
-                <span>Sign in</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {session ? (
+            <>
+              <SidebarMenuItem>
+                <div className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  <div className="truncate font-mono">{user?.email}</div>
+                </div>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={signOut} tooltip="Sign out">
+                  <LogOut />
+                  <span>Sign out</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </>
+          ) : (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={isActive("/auth")} tooltip="Sign in">
+                <Link to="/auth">
+                  <LogIn />
+                  <span>Sign in</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
