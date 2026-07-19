@@ -152,6 +152,18 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <div className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
                   <div className="truncate font-mono">{user?.email}</div>
+                  {roles.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {roles.map((r) => (
+                        <span
+                          key={r}
+                          className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </SidebarMenuItem>
               <SidebarMenuItem>
