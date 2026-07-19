@@ -19,6 +19,7 @@ import { Route as ReconRouteImport } from './routes/recon'
 import { Route as ReauthRouteImport } from './routes/reauth'
 import { Route as MethodologyRouteImport } from './routes/methodology'
 import { Route as LiveSessionRouteImport } from './routes/live-session'
+import { Route as LandingRouteImport } from './routes/landing'
 import { Route as HeadersRouteImport } from './routes/headers'
 import { Route as CsrfRouteImport } from './routes/csrf'
 import { Route as CookiesRouteImport } from './routes/cookies'
@@ -77,6 +78,11 @@ const LiveSessionRoute = LiveSessionRouteImport.update({
   path: '/live-session',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LandingRoute = LandingRouteImport.update({
+  id: '/landing',
+  path: '/landing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HeadersRoute = HeadersRouteImport.update({
   id: '/headers',
   path: '/headers',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/landing': typeof LandingRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/reauth': typeof ReauthRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/landing': typeof LandingRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/reauth': typeof ReauthRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/landing': typeof LandingRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/reauth': typeof ReauthRoute
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/landing'
     | '/live-session'
     | '/methodology'
     | '/reauth'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/landing'
     | '/live-session'
     | '/methodology'
     | '/reauth'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/landing'
     | '/live-session'
     | '/methodology'
     | '/reauth'
@@ -238,6 +250,7 @@ export interface RootRouteChildren {
   CookiesRoute: typeof CookiesRoute
   CsrfRoute: typeof CsrfRoute
   HeadersRoute: typeof HeadersRoute
+  LandingRoute: typeof LandingRoute
   LiveSessionRoute: typeof LiveSessionRoute
   MethodologyRoute: typeof MethodologyRoute
   ReauthRoute: typeof ReauthRoute
@@ -323,6 +336,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LiveSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/landing': {
+      id: '/landing'
+      path: '/landing'
+      fullPath: '/landing'
+      preLoaderRoute: typeof LandingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/headers': {
       id: '/headers'
       path: '/headers'
@@ -382,6 +402,7 @@ const rootRouteChildren: RootRouteChildren = {
   CookiesRoute: CookiesRoute,
   CsrfRoute: CsrfRoute,
   HeadersRoute: HeadersRoute,
+  LandingRoute: LandingRoute,
   LiveSessionRoute: LiveSessionRoute,
   MethodologyRoute: MethodologyRoute,
   ReauthRoute: ReauthRoute,
