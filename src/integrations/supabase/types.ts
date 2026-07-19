@@ -21,6 +21,7 @@ export type Database = {
           csrf: Json
           duration_ms: number | null
           error: string | null
+          evidence: Json
           headers: Json
           id: string
           overall_score: number
@@ -40,6 +41,7 @@ export type Database = {
           csrf?: Json
           duration_ms?: number | null
           error?: string | null
+          evidence?: Json
           headers?: Json
           id?: string
           overall_score?: number
@@ -59,6 +61,7 @@ export type Database = {
           csrf?: Json
           duration_ms?: number | null
           error?: string | null
+          evidence?: Json
           headers?: Json
           id?: string
           overall_score?: number
