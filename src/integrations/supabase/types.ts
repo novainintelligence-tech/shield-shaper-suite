@@ -14,7 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      scans: {
+        Row: {
+          cookies: Json
+          created_at: string
+          csrf: Json
+          duration_ms: number | null
+          error: string | null
+          headers: Json
+          id: string
+          overall_score: number
+          scores: Json
+          sessions: Json
+          status: string
+          target_host: string
+          target_url: string
+          tls: Json
+          user_id: string
+          xss: Json
+        }
+        Insert: {
+          cookies?: Json
+          created_at?: string
+          csrf?: Json
+          duration_ms?: number | null
+          error?: string | null
+          headers?: Json
+          id?: string
+          overall_score?: number
+          scores?: Json
+          sessions?: Json
+          status?: string
+          target_host: string
+          target_url: string
+          tls?: Json
+          user_id: string
+          xss?: Json
+        }
+        Update: {
+          cookies?: Json
+          created_at?: string
+          csrf?: Json
+          duration_ms?: number | null
+          error?: string | null
+          headers?: Json
+          id?: string
+          overall_score?: number
+          scores?: Json
+          sessions?: Json
+          status?: string
+          target_host?: string
+          target_url?: string
+          tls?: Json
+          user_id?: string
+          xss?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
