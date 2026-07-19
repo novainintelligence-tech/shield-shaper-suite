@@ -15,9 +15,11 @@ import {
   Workflow,
   FileText,
   Crosshair,
+  Users,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useMyRoles } from "@/hooks/use-roles";
 
 import {
   Sidebar,
@@ -59,6 +61,7 @@ export function AppSidebar() {
   const isActive = (path: string) =>
     path === "/" ? currentPath === "/" : currentPath.startsWith(path);
   const { session, user } = useSession();
+  const { isAdmin, roles } = useMyRoles();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -122,6 +125,24 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/admin")} tooltip="Access Control">
+                    <Link to="/admin">
+                      <Users />
+                      <span>Access Control</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
@@ -131,6 +152,18 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <div className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
                   <div className="truncate font-mono">{user?.email}</div>
+                  {roles.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {roles.map((r) => (
+                        <span
+                          key={r}
+                          className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </SidebarMenuItem>
               <SidebarMenuItem>
