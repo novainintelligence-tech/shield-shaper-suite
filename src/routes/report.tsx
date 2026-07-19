@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { FileDown } from "lucide-react";
+import { FileDown, FileJson, FileText, GitCompare } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader, PageShell } from "@/components/page-header";
@@ -7,19 +8,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenuLabel, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ScanRunner } from "@/components/scan-runner";
 import { EmptyScanState } from "@/components/empty-scan-state";
 import { RawBlock } from "@/components/raw-block";
 import { FindingValidator } from "@/components/finding-validator";
-import { useLatestScan } from "@/hooks/use-scans";
+import { useLatestScan, useRecentScans } from "@/hooks/use-scans";
 import { buildEngagementSummary, type RiskRating } from "@/lib/engagement";
 import { downloadEngagementPdf } from "@/lib/report-pdf";
+import { downloadJsonReport, downloadSarifReport } from "@/lib/report-exports";
+import { diffScans, type DiffStatus } from "@/lib/report-diff";
 
 export const Route = createFileRoute("/report")({
   head: () => ({
     meta: [
       { title: "Engagement Report · NOVAIN Security Lab" },
-      { name: "description", content: "Full penetration test engagement report with executive summary, findings, risk ratings, and remediation." },
+      { name: "description", content: "Full penetration test engagement report with executive & technical PDF, SARIF, JSON, CVSS 3.1 vectors, and scan-to-scan diff." },
     ],
   }),
   component: ReportPage,
@@ -33,8 +43,32 @@ const riskClass: Record<RiskRating, string> = {
   Info: "border-border text-muted-foreground",
 };
 
+const diffClass: Record<DiffStatus, string> = {
+  new: "border-critical/40 text-critical bg-critical/5",
+  changed: "border-warning/40 text-warning bg-warning/5",
+  resolved: "border-success/40 text-success bg-success/5",
+  unchanged: "border-border text-muted-foreground",
+};
+
 function ReportPage() {
   const { data: scan } = useLatestScan();
+  const { data: history } = useRecentScans();
+  const [baseId, setBaseId] = useState<string>("");
+
+  const baselineOptions = useMemo(() => {
+    if (!scan || !history) return [];
+    return history.filter((s) => s.targetHost === scan.targetHost && s.id !== scan.id);
+  }, [scan, history]);
+
+  const baseScan = useMemo(
+    () => baselineOptions.find((s) => s.id === baseId) ?? null,
+    [baselineOptions, baseId],
+  );
+
+  const diff = useMemo(
+    () => (scan && baseScan ? diffScans(baseScan, scan) : null),
+    [scan, baseScan],
+  );
 
   if (!scan) {
     return (
@@ -42,7 +76,7 @@ function ReportPage() {
         <PageHeader
           eyebrow="Reporting"
           title="Engagement report"
-          description="Executive summary, scope, methodology, asset inventory, confirmed findings, risk ratings, and remediation."
+          description="Executive & technical PDF, SARIF/JSON export, CVSS 3.1 vectors, and scan-to-scan diff."
           actions={<ScanRunner label="Run scan" />}
         />
         <EmptyScanState context="the engagement report" />
@@ -61,12 +95,34 @@ function ReportPage() {
         actions={
           <>
             <ScanRunner label="Rescan" />
-            <Button size="sm" onClick={() => { downloadEngagementPdf(scan); toast.success("Report exported"); }}>
-              <FileDown className="h-4 w-4" /> Download PDF
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  <FileDown className="h-4 w-4" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>PDF</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => { downloadEngagementPdf(scan, "executive"); toast.success("Executive PDF exported"); }}>
+                  <FileText className="h-4 w-4" /> Executive summary
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { downloadEngagementPdf(scan, "technical"); toast.success("Technical PDF exported"); }}>
+                  <FileText className="h-4 w-4" /> Technical report
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Machine-readable</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => { downloadSarifReport(scan); toast.success("SARIF exported"); }}>
+                  <FileJson className="h-4 w-4" /> SARIF 2.1.0
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { downloadJsonReport(scan); toast.success("JSON exported"); }}>
+                  <FileJson className="h-4 w-4" /> JSON report
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
+
 
       {/* 1. Executive summary */}
       <Card>
