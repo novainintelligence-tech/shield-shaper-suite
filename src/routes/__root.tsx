@@ -83,20 +83,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "NOVAIN Security Lab — Validate your web security posture" },
+      { title: "Dashboard · NOVAIN Security Lab" },
       {
         name: "description",
         content:
-          "NSL is a self-hosted security validation platform: cookies, headers, TLS, sessions, XSS/CSRF, and auth audits — all in one console.",
+          "Overall posture, module scores, and recent scan history for your web targets.",
       },
       { name: "author", content: "NOVAIN" },
-      { property: "og:title", content: "NOVAIN Security Lab" },
+      { property: "og:title", content: "Dashboard · NOVAIN Security Lab" },
       {
         property: "og:description",
-        content: "Validate the security posture of your own web applications from a single console.",
+        content: "Overall posture, module scores, and recent scan history for your web targets.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Dashboard · NOVAIN Security Lab" },
+      { name: "twitter:description", content: "Overall posture, module scores, and recent scan history for your web targets." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/c8a9a413-1398-4148-a668-171100636cd0" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/c8a9a413-1398-4148-a668-171100636cd0" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
