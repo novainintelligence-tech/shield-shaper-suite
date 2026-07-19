@@ -24,6 +24,7 @@ export type Database = {
           headers: Json
           id: string
           overall_score: number
+          recon: Json
           scores: Json
           sessions: Json
           status: string
@@ -42,6 +43,7 @@ export type Database = {
           headers?: Json
           id?: string
           overall_score?: number
+          recon?: Json
           scores?: Json
           sessions?: Json
           status?: string
@@ -60,6 +62,7 @@ export type Database = {
           headers?: Json
           id?: string
           overall_score?: number
+          recon?: Json
           scores?: Json
           sessions?: Json
           status?: string
