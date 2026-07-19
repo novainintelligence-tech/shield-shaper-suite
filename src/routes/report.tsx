@@ -123,8 +123,75 @@ function ReportPage() {
         }
       />
 
+      {/* Scan-to-scan diff */}
+      <Card>
+        <CardHeader className="pb-2 flex-row items-center justify-between gap-4 space-y-0">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <GitCompare className="h-4 w-4" /> Scan diff
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Baseline</span>
+            <Select value={baseId} onValueChange={setBaseId}>
+              <SelectTrigger className="h-8 w-[260px] text-xs">
+                <SelectValue placeholder={baselineOptions.length ? "Choose a previous scan" : "No previous scans"} />
+              </SelectTrigger>
+              <SelectContent>
+                {baselineOptions.map((s) => (
+                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                    {new Date(s.createdAt).toLocaleString()} · score {s.overallScore}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {!diff ? (
+            <p className="text-muted-foreground">
+              {baselineOptions.length === 0
+                ? "Run another scan on this host to enable diffing."
+                : "Pick a baseline scan to compare against the current one."}
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-mono text-xs">
+                  Score {diff.base.overallScore} → {diff.head.overallScore}{" "}
+                  <span className={diff.scoreDelta >= 0 ? "text-success" : "text-critical"}>
+                    ({diff.scoreDelta >= 0 ? "+" : ""}{diff.scoreDelta})
+                  </span>
+                </span>
+                <Badge variant="outline" className={diffClass.new}>New: {diff.totals.added}</Badge>
+                <Badge variant="outline" className={diffClass.resolved}>Resolved: {diff.totals.resolved}</Badge>
+                <Badge variant="outline" className={diffClass.changed}>Changed: {diff.totals.changed}</Badge>
+                <Badge variant="outline" className={diffClass.unchanged}>Unchanged: {diff.totals.unchanged}</Badge>
+              </div>
+              <div className="rounded-md border border-border/60 divide-y divide-border/60">
+                {diff.rows.slice(0, 40).map((r) => (
+                  <div key={`${r.status}-${r.id}`} className="flex items-start gap-3 p-2">
+                    <Badge variant="outline" className={`${diffClass[r.status]} shrink-0 uppercase text-[10px]`}>
+                      {r.status}
+                    </Badge>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm truncate">{r.title}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground">
+                        {r.module}
+                        {r.status === "changed" && r.before && r.after && (
+                          <> · CVSS {r.before.cvss.toFixed(1)} → {r.after.cvss.toFixed(1)} · {r.before.risk} → {r.after.risk}</>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {diff.rows.length > 40 && (
+                  <div className="p-2 text-xs text-muted-foreground">+{diff.rows.length - 40} more rows — export JSON/SARIF for full diff.</div>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* 1. Executive summary */}
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">1. Executive Summary</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
