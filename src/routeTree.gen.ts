@@ -16,6 +16,7 @@ import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as ReconRouteImport } from './routes/recon'
 import { Route as MethodologyRouteImport } from './routes/methodology'
+import { Route as LiveSessionRouteImport } from './routes/live-session'
 import { Route as HeadersRouteImport } from './routes/headers'
 import { Route as CsrfRouteImport } from './routes/csrf'
 import { Route as CookiesRouteImport } from './routes/cookies'
@@ -57,6 +58,11 @@ const ReconRoute = ReconRouteImport.update({
 const MethodologyRoute = MethodologyRouteImport.update({
   id: '/methodology',
   path: '/methodology',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveSessionRoute = LiveSessionRouteImport.update({
+  id: '/live-session',
+  path: '/live-session',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HeadersRoute = HeadersRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/live-session'
     | '/methodology'
     | '/recon'
     | '/report'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/live-session'
     | '/methodology'
     | '/recon'
     | '/report'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/live-session'
     | '/methodology'
     | '/recon'
     | '/report'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   CookiesRoute: typeof CookiesRoute
   CsrfRoute: typeof CsrfRoute
   HeadersRoute: typeof HeadersRoute
+  LiveSessionRoute: typeof LiveSessionRoute
   MethodologyRoute: typeof MethodologyRoute
   ReconRoute: typeof ReconRoute
   ReportRoute: typeof ReportRoute
@@ -263,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MethodologyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/live-session': {
+      id: '/live-session'
+      path: '/live-session'
+      fullPath: '/live-session'
+      preLoaderRoute: typeof LiveSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/headers': {
       id: '/headers'
       path: '/headers'
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   CookiesRoute: CookiesRoute,
   CsrfRoute: CsrfRoute,
   HeadersRoute: HeadersRoute,
+  LiveSessionRoute: LiveSessionRoute,
   MethodologyRoute: MethodologyRoute,
   ReconRoute: ReconRoute,
   ReportRoute: ReportRoute,
