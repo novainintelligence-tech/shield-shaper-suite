@@ -13,7 +13,9 @@ import { Route as XssRouteImport } from './routes/xss'
 import { Route as TlsRouteImport } from './routes/tls'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SessionsRouteImport } from './routes/sessions'
+import { Route as ReportRouteImport } from './routes/report'
 import { Route as ReconRouteImport } from './routes/recon'
+import { Route as MethodologyRouteImport } from './routes/methodology'
 import { Route as HeadersRouteImport } from './routes/headers'
 import { Route as CsrfRouteImport } from './routes/csrf'
 import { Route as CookiesRouteImport } from './routes/cookies'
@@ -42,9 +44,19 @@ const SessionsRoute = SessionsRouteImport.update({
   path: '/sessions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportRoute = ReportRouteImport.update({
+  id: '/report',
+  path: '/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReconRoute = ReconRouteImport.update({
   id: '/recon',
   path: '/recon',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MethodologyRoute = MethodologyRouteImport.update({
+  id: '/methodology',
+  path: '/methodology',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HeadersRoute = HeadersRouteImport.update({
@@ -90,7 +102,9 @@ export interface FileRoutesByFullPath {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
+  '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
@@ -104,7 +118,9 @@ export interface FileRoutesByTo {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
+  '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
@@ -119,7 +135,9 @@ export interface FileRoutesById {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/methodology': typeof MethodologyRoute
   '/recon': typeof ReconRoute
+  '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
@@ -135,7 +153,9 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/methodology'
     | '/recon'
+    | '/report'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
@@ -149,7 +169,9 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/methodology'
     | '/recon'
+    | '/report'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
@@ -163,7 +185,9 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/methodology'
     | '/recon'
+    | '/report'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
@@ -178,7 +202,9 @@ export interface RootRouteChildren {
   CookiesRoute: typeof CookiesRoute
   CsrfRoute: typeof CsrfRoute
   HeadersRoute: typeof HeadersRoute
+  MethodologyRoute: typeof MethodologyRoute
   ReconRoute: typeof ReconRoute
+  ReportRoute: typeof ReportRoute
   SessionsRoute: typeof SessionsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TlsRoute: typeof TlsRoute
@@ -216,11 +242,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report': {
+      id: '/report'
+      path: '/report'
+      fullPath: '/report'
+      preLoaderRoute: typeof ReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recon': {
       id: '/recon'
       path: '/recon'
       fullPath: '/recon'
       preLoaderRoute: typeof ReconRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/methodology': {
+      id: '/methodology'
+      path: '/methodology'
+      fullPath: '/methodology'
+      preLoaderRoute: typeof MethodologyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/headers': {
@@ -282,7 +322,9 @@ const rootRouteChildren: RootRouteChildren = {
   CookiesRoute: CookiesRoute,
   CsrfRoute: CsrfRoute,
   HeadersRoute: HeadersRoute,
+  MethodologyRoute: MethodologyRoute,
   ReconRoute: ReconRoute,
+  ReportRoute: ReportRoute,
   SessionsRoute: SessionsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TlsRoute: TlsRoute,
@@ -292,13 +334,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

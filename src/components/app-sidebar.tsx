@@ -12,6 +12,8 @@ import {
   LogIn,
   LogOut,
   Radar,
+  Workflow,
+  FileText,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -31,7 +33,11 @@ import {
 import { useSession } from "@/hooks/use-session";
 import { supabase } from "@/integrations/supabase/client";
 
-const overview = [{ title: "Dashboard", url: "/", icon: LayoutDashboard }];
+const overview = [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Workflow", url: "/methodology", icon: Workflow },
+  { title: "Engagement Report", url: "/report", icon: FileText },
+];
 
 const modules = [
   { title: "Cookie Inspector", url: "/cookies", icon: Cookie },
