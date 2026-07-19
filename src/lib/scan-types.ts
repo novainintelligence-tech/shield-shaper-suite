@@ -18,6 +18,7 @@ export interface CookieRow {
   expires: string;
   jsAccessible: boolean;
   severity: Severity;
+  note?: string;
 }
 
 export interface TlsResult {
@@ -47,7 +48,7 @@ export interface CsrfCheck {
 export interface XssCase {
   id: string;
   vector: string;
-  category: "CSP" | "Encoding" | "Headers";
+  category: "CSP" | "Encoding" | "Headers" | "Reflected" | "CORS";
   severity: Severity;
   detail: string;
 }
@@ -58,6 +59,17 @@ export interface SessionCheck {
   observation: string;
 }
 
+export type ReconCategory = "meta" | "exposure" | "mixed-content" | "redirect";
+
+export interface ReconCheck {
+  id: string;
+  category: ReconCategory;
+  name: string;
+  severity: Severity;
+  note: string;
+  target?: string;
+}
+
 export interface ScoreBreakdown {
   headers: number;
   cookies: number;
@@ -65,6 +77,7 @@ export interface ScoreBreakdown {
   sessions: number;
   csrf: number;
   xss: number;
+  recon: number;
 }
 
 export interface ScanResult {
@@ -81,6 +94,7 @@ export interface ScanResult {
   csrf: CsrfCheck[];
   xss: XssCase[];
   sessions: SessionCheck[];
+  recon: ReconCheck[];
   error: string | null;
   createdAt: string;
 }
