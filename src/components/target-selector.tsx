@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 const STORAGE_KEY = "nsl:target";
-const DEFAULTS = ["https://novain-security-lab.local", "https://staging.novain.app"];
+const DEFAULTS = ["https://example.com", "https://github.com", "https://developer.mozilla.org"];
 
 export function useTarget() {
   const [target, setTarget] = useState<string>(DEFAULTS[0]);

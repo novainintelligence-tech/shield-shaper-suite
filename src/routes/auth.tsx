@@ -1,18 +1,21 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ShieldCheck, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
+import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Sign in · NOVAIN Security Lab" },
-      { name: "description", content: "Sign in to the NOVAIN Security Lab console." },
+      { name: "description", content: "Sign in to run real security scans and save scan history." },
     ],
   }),
   component: AuthPage,
@@ -20,10 +23,63 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+  const { session, loading } = useSession();
+
+  useEffect(() => {
+    if (!loading && session) navigate({ to: "/" });
+  }, [session, loading, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) throw error;
+        toast.success("Account created", { description: "You are signed in." });
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        toast.success("Signed in");
+      }
+      navigate({ to: "/" });
+    } catch (err) {
+      toast.error(mode === "signup" ? "Sign-up failed" : "Sign-in failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setBusy(true);
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+      });
+      if (result.error) throw result.error;
+      if (result.redirected) return;
+      navigate({ to: "/" });
+    } catch (err) {
+      toast.error("Google sign-in failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="grid-bg flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-      <Card className="w-full max-w-md panel">
+    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
+      <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 ring-1 ring-primary/40">
             <ShieldCheck className="h-5 w-5 text-primary" />
@@ -33,56 +89,65 @@ function AuthPage() {
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {mode === "signin"
-              ? "Access your security console."
-              : "Provision a new workspace for validation runs."}
+              ? "Access your security console and scan history."
+              : "Real scans and per-account history are ready as soon as you sign up."}
           </p>
         </CardHeader>
         <CardContent>
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              toast.info("Authentication is mocked", {
-                description: "Enable Lovable Cloud to wire real auth (email + MFA).",
-              });
-            }}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleGoogle}
+            disabled={busy}
           >
-            {mode === "signup" && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Full name</Label>
-                <Input id="name" placeholder="Alex Rivera" />
-              </div>
-            )}
+            Continue with Google
+          </Button>
+          <div className="my-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            or
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="email">Work email</Label>
-              <Input id="email" type="email" placeholder="you@company.com" />
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="••••••••" />
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
             </div>
-            {mode === "signin" && (
-              <div className="space-y-2">
-                <Label htmlFor="totp">TOTP code</Label>
-                <Input id="totp" inputMode="numeric" maxLength={6} placeholder="123 456" className="font-mono tracking-widest" />
-              </div>
-            )}
-            <Button className="w-full" type="submit">
+            <Button className="w-full" type="submit" disabled={busy}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {mode === "signin" ? "Sign in" : "Create account"}
             </Button>
           </form>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="mt-4 text-center text-xs text-muted-foreground">
             <button
               type="button"
               className="underline-offset-2 hover:text-foreground hover:underline"
               onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
             >
-              {mode === "signin" ? "Create an account" : "Have an account? Sign in"}
+              {mode === "signin"
+                ? "New here? Create an account"
+                : "Have an account? Sign in"}
             </button>
-            <Link to="/" className="underline-offset-2 hover:text-foreground hover:underline">
-              Continue as guest
-            </Link>
           </div>
         </CardContent>
       </Card>
