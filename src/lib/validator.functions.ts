@@ -770,6 +770,12 @@ export const POC_LIBRARY = [
   { id: "forwarded-user", label: "Auth bypass: X-Forwarded-User trust", active: false, desc: "Compare anonymous vs spoofed X-Forwarded-User / X-Remote-User headers." },
   { id: "original-url", label: "Auth bypass: X-Original-URL rewrite", active: false, desc: "Fetch '/' with X-Original-URL pointing at the protected path; look for ACL bypass." },
   { id: "jwt-alg-none", label: "Auth bypass: JWT alg:none", active: false, desc: "Send an unsigned JWT (alg:\"none\") asserting admin claims and compare to anonymous baseline." },
+  { id: "sql-injection", label: "SQL injection (error + boolean)", active: true, desc: "Inject '\" into each query param, then a boolean TRUE/FALSE pair; diff responses." },
+  { id: "ssrf", label: "SSRF via fetch params", active: true, desc: "Point url/src/target-shaped params at cloud metadata endpoints and loopback." },
+  { id: "path-traversal", label: "Path traversal", active: true, desc: "Encoded ../ payloads against file/path/include params; grep for /etc/passwd markers." },
+  { id: "graphql-introspection", label: "GraphQL introspection", active: false, desc: "POST __schema query to /graphql and common variants; flag if schema returned." },
+  { id: "idor", label: "IDOR numeric enumeration", active: true, desc: "Sweep ±N around a numeric ID in the path or query; flag distinct 2xx bodies." },
+  { id: "nosql-injection", label: "NoSQL operator injection", active: true, desc: "Replace ?p=v with ?p[$ne]=canary; look for response growth vs baseline." },
 ] as const;
 
 export type PocId = typeof POC_LIBRARY[number]["id"];
