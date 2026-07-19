@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { ReconCheck, ScanResult } from "./scan-types";
+import type { ReconCheck, ScanEvidence, ScanResult } from "./scan-types";
 
 interface DbScanRow {
   id: string;
@@ -19,12 +19,19 @@ interface DbScanRow {
   xss: ScanResult["xss"];
   sessions: ScanResult["sessions"];
   recon: ReconCheck[] | null;
+  evidence: Partial<ScanEvidence> | null;
   error: string | null;
   created_at: string;
 }
 
+const EMPTY_EVIDENCE: ScanEvidence = {
+  primary: null, setCookies: [], forms: [], mixedContentRefs: [],
+  xssProbe: null, corsProbe: null, exposure: [], meta: [], redirect: null, crtsh: null,
+};
+
 function toResult(row: DbScanRow): ScanResult {
   const scores = row.scores as Partial<ScanResult["scores"]> | null;
+  const ev = row.evidence ?? {};
   return {
     id: row.id,
     targetUrl: row.target_url,
@@ -48,6 +55,7 @@ function toResult(row: DbScanRow): ScanResult {
     xss: row.xss ?? [],
     sessions: row.sessions ?? [],
     recon: row.recon ?? [],
+    evidence: { ...EMPTY_EVIDENCE, ...ev } as ScanEvidence,
     error: row.error,
     createdAt: row.created_at,
   };
