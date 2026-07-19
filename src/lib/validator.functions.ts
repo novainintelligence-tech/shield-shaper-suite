@@ -259,6 +259,231 @@ async function pocCsrfActive(target: string, endpoint: string): Promise<Omit<Val
   };
 }
 
+// ---------- new PoC library (standalone probes) ----------
+
+async function pocOpenRedirect(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const evil = "https://nsl-poc.invalid/canary";
+  const params = ["next", "url", "redirect", "redirect_uri", "return", "returnUrl", "continue", "dest", "destination"];
+  const steps: ProbeStep[] = [];
+  let confirmed: string | null = null;
+  for (const p of params) {
+    const u = new URL(target);
+    u.searchParams.set(p, evil);
+    const s = await probeStep(`Try ?${p}=<evil>`, "GET", u.toString());
+    steps.push(s);
+    const loc = s.responseHeaders["location"] ?? "";
+    if (s.status && s.status >= 300 && s.status < 400 && loc.includes("nsl-poc.invalid")) {
+      confirmed = `${p} → ${loc}`;
+      break;
+    }
+    if (steps.length >= 6) break;
+  }
+  return {
+    verdict: confirmed ? "confirmed" : "not-exploitable",
+    summary: confirmed
+      ? `Open-redirect confirmed via query param: ${confirmed}`
+      : "No tested query parameter caused an off-origin redirect.",
+    poc: "Append common redirect params (next, url, redirect, return, dest…) pointing at an external canary and observe the Location header.",
+    steps,
+  };
+}
+
+async function pocMixedContent(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const s1 = await probeStep("Fetch page HTML", "GET", target);
+  const body = s1.bodySnippet;
+  const matches = Array.from(body.matchAll(/(?:src|href)\s*=\s*["'](http:\/\/[^"']+)["']/gi)).map((m) => m[1]).slice(0, 20);
+  return {
+    verdict: matches.length > 0 ? "confirmed" : "not-exploitable",
+    summary: matches.length > 0
+      ? `Found ${matches.length} plain-http subresource(s) referenced from an https page:\n${matches.join("\n")}`
+      : "No http:// subresources referenced in the first response body chunk.",
+    poc: "Fetch the HTTPS page and search the response body for http:// src/href attributes.",
+    steps: [s1],
+  };
+}
+
+async function pocSri(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const s1 = await probeStep("Fetch page HTML", "GET", target);
+  const body = s1.bodySnippet;
+  const origin = new URL(target).origin;
+  const scripts = Array.from(body.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi));
+  const missing: string[] = [];
+  for (const m of scripts) {
+    const tag = m[0];
+    const src = m[1];
+    let abs: string;
+    try { abs = new URL(src, target).toString(); } catch { continue; }
+    if (new URL(abs).origin === origin) continue;
+    if (!/\bintegrity\s*=/.test(tag)) missing.push(abs);
+    if (missing.length >= 15) break;
+  }
+  return {
+    verdict: missing.length > 0 ? "confirmed" : "not-exploitable",
+    summary: missing.length > 0
+      ? `Cross-origin <script> tags without SRI integrity= attribute:\n${missing.join("\n")}`
+      : "All cross-origin scripts either carry integrity= or none were found in the body chunk.",
+    poc: "Parse <script src=...> tags in the HTML body, filter cross-origin, flag any missing an integrity= attribute.",
+    steps: [s1],
+  };
+}
+
+async function pocCors(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const evilOrigin = "https://nsl-poc.invalid";
+  const s1 = await probeStep("GET with hostile Origin header", "GET", target, { headers: { origin: evilOrigin } });
+  const acao = s1.responseHeaders["access-control-allow-origin"];
+  const acac = s1.responseHeaders["access-control-allow-credentials"];
+  let verdict: Verdict = "not-exploitable";
+  let summary = `Access-Control-Allow-Origin: ${acao ?? "(absent)"} · Access-Control-Allow-Credentials: ${acac ?? "(absent)"}`;
+  if (acao === evilOrigin || acao === "*" && acac === "true") {
+    verdict = "confirmed";
+    summary = `CORS misconfiguration: server reflects/allows origin "${acao}" with credentials=${acac ?? "false"}. Cross-origin reads possible.`;
+  } else if (acao === evilOrigin) {
+    verdict = "confirmed";
+    summary = `Server echoed our hostile Origin (${evilOrigin}) into Access-Control-Allow-Origin. Reflection-based CORS bypass.`;
+  } else if (acao === "*") {
+    verdict = "inconclusive";
+    summary = `Wildcard CORS (${acao}); safe unless credentialed. Credentials header: ${acac ?? "absent"}.`;
+  }
+  return {
+    verdict,
+    summary,
+    poc: "Send a GET carrying Origin: https://nsl-poc.invalid and inspect Access-Control-Allow-Origin / -Credentials.",
+    steps: [s1],
+  };
+}
+
+async function pocCachePoison(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const hostile = "evil.nsl-poc.invalid";
+  const s1 = await probeStep("Inject X-Forwarded-Host + X-Forwarded-Proto", "GET", target, {
+    headers: { "x-forwarded-host": hostile, "x-forwarded-proto": "http" },
+  });
+  const loc = s1.responseHeaders["location"] ?? "";
+  const body = s1.bodySnippet;
+  const reflectedInLoc = loc.includes(hostile);
+  const reflectedInBody = body.includes(hostile);
+  const cache = s1.responseHeaders["x-cache"] || s1.responseHeaders["cf-cache-status"] || s1.responseHeaders["age"];
+  let verdict: Verdict = "not-exploitable";
+  let summary = "Injected X-Forwarded-Host was not reflected in the response.";
+  if (reflectedInLoc || reflectedInBody) {
+    verdict = "confirmed";
+    summary = `Server trusts X-Forwarded-Host: value "${hostile}" reflected in ${reflectedInLoc ? "Location" : "body"}. If this response is cached, other visitors receive the poisoned link.${cache ? ` Cache signal: ${cache}` : ""}`;
+  }
+  return {
+    verdict,
+    summary,
+    poc: "Send GET with X-Forwarded-Host: evil.nsl-poc.invalid and check if the value leaks into Location or body.",
+    steps: [s1],
+  };
+}
+
+async function pocVerbTampering(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const steps: ProbeStep[] = [];
+  const findings: string[] = [];
+  for (const m of ["PUT", "DELETE", "PATCH", "TRACE"] as const) {
+    const s = await probeStep(`${m} same URL`, m, target);
+    steps.push(s);
+    if (s.status && s.status >= 200 && s.status < 300) {
+      findings.push(`${m} → ${s.status} (accepted)`);
+    } else if (m === "TRACE" && s.status === 200) {
+      findings.push(`TRACE enabled — Cross-Site Tracing surface.`);
+    }
+  }
+  return {
+    verdict: findings.length > 0 ? "confirmed" : "not-exploitable",
+    summary: findings.length > 0
+      ? `Unexpected verb acceptance:\n${findings.join("\n")}`
+      : "All non-GET verbs rejected (401/403/404/405).",
+    poc: "Issue PUT / DELETE / PATCH / TRACE against the URL and flag any 2xx response.",
+    steps,
+  };
+}
+
+// ---------- dispatcher ----------
+
+export const POC_LIBRARY = [
+  { id: "open-redirect", label: "Open redirect", active: false, desc: "Test 9 common redirect query params against an external canary." },
+  { id: "mixed-content", label: "Mixed content", active: false, desc: "Find http:// subresources loaded from an https:// page." },
+  { id: "sri", label: "Subresource Integrity", active: false, desc: "Flag cross-origin <script> tags missing an integrity= attribute." },
+  { id: "cors", label: "CORS reflection", active: false, desc: "Send hostile Origin; check for reflection + credentials." },
+  { id: "cache-poison", label: "Cache-key host injection", active: false, desc: "Inject X-Forwarded-Host and look for reflection." },
+  { id: "hsts", label: "HTTPS downgrade / HSTS", active: false, desc: "Force http:// and check redirect + HSTS on the plain response." },
+  { id: "xss-reflect", label: "Reflected XSS canary", active: false, desc: "Inject a benign canary via ?q= and locate the reflection context." },
+  { id: "headers", label: "Security header audit", active: false, desc: "Snapshot response headers and flag missing hardening headers." },
+  { id: "redirect-chain", label: "Redirect chain", active: false, desc: "Follow up to 5 hops; flag off-origin or protocol downgrade." },
+  { id: "verb-tampering", label: "HTTP verb tampering", active: true, desc: "PUT / DELETE / PATCH / TRACE against the same URL." },
+] as const;
+
+export type PocId = typeof POC_LIBRARY[number]["id"];
+
+async function pocHeadersAudit(target: string): Promise<Omit<ValidationResult, "findingId" | "ranAt" | "active">> {
+  const s1 = await probeStep("Snapshot response headers", "GET", target);
+  const wanted = [
+    "strict-transport-security",
+    "content-security-policy",
+    "x-frame-options",
+    "x-content-type-options",
+    "referrer-policy",
+    "permissions-policy",
+    "cross-origin-opener-policy",
+    "cross-origin-resource-policy",
+  ];
+  const missing = wanted.filter((h) => !s1.responseHeaders[h]);
+  return {
+    verdict: missing.length > 0 ? "confirmed" : "not-exploitable",
+    summary: missing.length > 0
+      ? `Missing hardening headers: ${missing.join(", ")}`
+      : "All standard hardening headers present.",
+    poc: "GET the URL and diff response headers against the browser-hardening baseline.",
+    steps: [s1],
+  };
+}
+
+const StandaloneInput = z.object({
+  url: z.string().url().refine((u) => u.startsWith("https://") || u.startsWith("http://"), "url must be http(s)"),
+  pocId: z.string().min(1).max(60),
+  authorizeActive: z.boolean().optional().default(false),
+});
+
+export const runStandalonePoc = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: z.infer<typeof StandaloneInput>) => StandaloneInput.parse(data))
+  .handler(async ({ data }): Promise<ValidationResult> => {
+    const ranAt = new Date().toISOString();
+    const entry = POC_LIBRARY.find((p) => p.id === data.pocId);
+    const wrap = (
+      active: boolean,
+      body: Omit<ValidationResult, "findingId" | "ranAt" | "active">,
+    ): ValidationResult => ({ findingId: `poc:${data.pocId}`, ranAt, active, ...body });
+
+    if (!entry) return wrap(false, { verdict: "error", summary: `Unknown PoC id "${data.pocId}"`, poc: "", steps: [] });
+    if (entry.active && !data.authorizeActive) {
+      return wrap(true, {
+        verdict: "skipped",
+        summary: "Active PoC blocked. Toggle authorization to run.",
+        poc: entry.desc,
+        steps: [],
+      });
+    }
+
+    try {
+      switch (data.pocId as PocId) {
+        case "open-redirect": return wrap(false, await pocOpenRedirect(data.url));
+        case "mixed-content": return wrap(false, await pocMixedContent(data.url));
+        case "sri":           return wrap(false, await pocSri(data.url));
+        case "cors":          return wrap(false, await pocCors(data.url));
+        case "cache-poison":  return wrap(false, await pocCachePoison(data.url));
+        case "hsts":          return wrap(false, await pocHsts(data.url));
+        case "xss-reflect":   return wrap(false, await pocXss(data.url));
+        case "headers":       return wrap(false, await pocHeadersAudit(data.url));
+        case "redirect-chain":return wrap(false, await pocRedirect(data.url));
+        case "verb-tampering":return wrap(true,  await pocVerbTampering(data.url));
+        default:              return wrap(false, { verdict: "error", summary: `Unhandled PoC id`, poc: "", steps: [] });
+      }
+    } catch (e) {
+      return wrap(entry.active, { verdict: "error", summary: e instanceof Error ? e.message : String(e), poc: entry.desc, steps: [] });
+    }
+  });
+
 // ---------- dispatcher ----------
 
 export const runValidation = createServerFn({ method: "POST" })
