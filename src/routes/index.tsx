@@ -64,6 +64,7 @@ function Dashboard() {
         actions={
           <>
             <ScanRunner label="Run scan" />
+            <ExportPdfButton scan={latest} />
             <Button size="sm" variant="outline" disabled={!history || history.length === 0}>
               <Activity className="h-4 w-4" />
               {history?.length ?? 0} in history
