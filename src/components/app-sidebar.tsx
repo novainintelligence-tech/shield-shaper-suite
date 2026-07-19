@@ -14,6 +14,7 @@ import {
   Radar,
   Workflow,
   FileText,
+  Crosshair,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -37,6 +38,7 @@ const overview = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Workflow", url: "/methodology", icon: Workflow },
   { title: "Engagement Report", url: "/report", icon: FileText },
+  { title: "PoC Validator", url: "/validator", icon: Crosshair },
 ];
 
 const modules = [
