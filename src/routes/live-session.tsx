@@ -88,7 +88,12 @@ function LiveSessionPage() {
     setError(null);
     let snap: SessionSnapshot;
     try {
-      snap = JSON.parse(pasted) as SessionSnapshot;
+      const parsed = JSON.parse(pasted);
+      // Extension "All tabs" produces an array — pick the one matching the current target, else the first.
+      const one = Array.isArray(parsed)
+        ? (parsed.find((s: SessionSnapshot) => host && (s.origin || "").includes(host)) ?? parsed[0])
+        : parsed;
+      snap = one as SessionSnapshot;
     } catch {
       // Fallback: treat as a raw document.cookie string
       snap = { cookies: pasted, at: new Date().toISOString() };
