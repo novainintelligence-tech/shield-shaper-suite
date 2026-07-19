@@ -15,7 +15,8 @@ export const getMyRoles = createServerFn({ method: "GET" })
     return (data ?? []).map((r) => r.role as AppRole);
   });
 
-async function assertAdmin(context: { supabase: ReturnType<typeof requireSupabaseAuth> extends never ? never : any; userId: string }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function assertAdmin(context: { supabase: any; userId: string }) {
   const { data, error } = await context.supabase.rpc("has_role", {
     _user_id: context.userId,
     _role: "admin",
