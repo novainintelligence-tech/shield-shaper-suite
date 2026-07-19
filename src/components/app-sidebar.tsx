@@ -15,9 +15,11 @@ import {
   Workflow,
   FileText,
   Crosshair,
+  Users,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useMyRoles } from "@/hooks/use-roles";
 
 import {
   Sidebar,

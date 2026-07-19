@@ -57,7 +57,7 @@ function AdminPage() {
   if (!isAdmin) {
     return (
       <PageShell>
-        <PageHeader title="Access Control" description="Admin privileges required to view this page." />
+        <PageHeader eyebrow="Access Control" title="Access Control" description="Admin privileges required to view this page." />
         <Card><CardContent className="py-10 text-center text-muted-foreground">You need the <Badge variant="outline">admin</Badge> role to manage users.</CardContent></Card>
       </PageShell>
     );
@@ -66,6 +66,7 @@ function AdminPage() {
   return (
     <PageShell>
       <PageHeader
+        eyebrow="Administration"
         title="Access Control"
         description="Grant or revoke admin, editor, and viewer roles. Roles are enforced by database policies."
       />
