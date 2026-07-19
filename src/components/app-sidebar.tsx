@@ -42,6 +42,7 @@ const overview = [
 const modules = [
   { title: "Cookie Inspector", url: "/cookies", icon: Cookie },
   { title: "Live Session", url: "/live-session", icon: KeyRound },
+  { title: "Reauth Probe", url: "/reauth", icon: LogIn },
   { title: "XSS Test Suite", url: "/xss", icon: Bug },
   { title: "CSRF Validator", url: "/csrf", icon: ShieldAlert },
   { title: "Session Security", url: "/sessions", icon: KeyRound },
