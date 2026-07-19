@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { RawBlock } from "@/components/raw-block";
 import type { Finding } from "@/lib/engagement";
 import { runValidation, type ValidationResult, type Verdict } from "@/lib/validator.functions";
+import { toCurl } from "@/lib/validator-command";
 
 const ACTIVE_PREFIXES = ["csrf-"];
 
@@ -122,6 +123,12 @@ export function FindingValidator({ finding, targetUrl, globalAuthorize, presetRe
             <div key={i} className="space-y-1">
               <div className="text-xs font-mono">
                 {s.method} {s.url} → {s.status ?? "no response"}{s.error ? ` (${s.error})` : ""}
+              </div>
+              <RawBlock title="command · reproduces this request exactly (curl)">
+                {toCurl(s)}
+              </RawBlock>
+              <div className="text-[11px] text-muted-foreground">
+                Runtime: <code>fetch()</code> with <code>redirect: "manual"</code>, 8s timeout, response headers &amp; body captured verbatim.
               </div>
               {Object.keys(s.responseHeaders).length > 0 && (
                 <RawBlock title="response headers">

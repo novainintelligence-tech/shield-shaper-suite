@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { PlayCircle, Loader2 } from "lucide-react";
+import { PlayCircle, Loader2, FileDown } from "lucide-react";
 
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import { useLatestScan } from "@/hooks/use-scans";
 import { buildFindings, type RiskRating } from "@/lib/engagement";
 import { useServerFn } from "@tanstack/react-start";
 import { runValidation, type ValidationResult } from "@/lib/validator.functions";
+import { downloadValidatorPdf } from "@/lib/validator-pdf";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/validator")({
@@ -76,6 +77,22 @@ function ValidatorPage() {
     toast.success(`Ran ${safe.length} safe PoCs`);
   };
 
+  const exportPdf = () => {
+    const entries = findings
+      .map((f) => ({ finding: f, result: results[f.id] }))
+      .filter((e): e is { finding: typeof e.finding; result: ValidationResult } => Boolean(e.result));
+    if (entries.length === 0) {
+      toast.error("No validations to export", { description: "Run at least one PoC first." });
+      return;
+    }
+    try {
+      downloadValidatorPdf(scan.targetHost, scan.targetUrl, entries);
+      toast.success(`Exported ${entries.length} validation${entries.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast.error("PDF export failed", { description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   return (
     <PageShell>
       <PageHeader
@@ -88,6 +105,10 @@ function ValidatorPage() {
             <Button size="sm" variant="outline" disabled={batchBusy || findings.length === 0} onClick={runAllSafe}>
               {batchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
               Run all safe PoCs
+            </Button>
+            <Button size="sm" variant="outline" disabled={Object.keys(results).length === 0} onClick={exportPdf}>
+              <FileDown className="h-4 w-4" />
+              Export PDF
             </Button>
           </>
         }
