@@ -1,0 +1,70 @@
+name: NSL Security Scan
+
+# Runs NOVAIN Security Lab checks against a deployed URL after every deploy.
+# Configure the following GitHub repo secrets:
+#   NSL_ENDPOINT   -> https://shield-shaper-suite.lovable.app/api/public/ci/scan
+#   NSL_CI_SECRET  -> the shared HMAC secret (same value stored in Lovable Cloud)
+#   NSL_TARGET_URL -> the URL to scan (or set per-environment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target URL to scan"
+        required: true
+  deployment_status: {}
+  push:
+    branches: [main]
+
+jobs:
+  nsl-scan:
+    if: ${{ github.event_name != 'deployment_status' || github.event.deployment_status.state == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target URL
+        id: target
+        run: |
+          URL="${{ github.event.inputs.target }}"
+          [ -z "$URL" ] && URL="${{ github.event.deployment_status.target_url }}"
+          [ -z "$URL" ] && URL="${{ secrets.NSL_TARGET_URL }}"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Run NSL scan
+        id: scan
+        env:
+          NSL_ENDPOINT: ${{ secrets.NSL_ENDPOINT }}
+          NSL_CI_SECRET: ${{ secrets.NSL_CI_SECRET }}
+          TARGET: ${{ steps.target.outputs.url }}
+        run: |
+          BODY=$(jq -cn --arg url "$TARGET" '{url:$url, persist:true, failOn:"high"}')
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$NSL_CI_SECRET" -hex | awk '{print $2}')
+          HTTP=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "$NSL_ENDPOINT" \
+            -H "content-type: application/json" \
+            -H "x-nsl-signature: $SIG" \
+            --data "$BODY")
+          echo "HTTP $HTTP"
+          jq '.summary' response.json || cat response.json
+          jq '.sarif'   response.json > nsl.sarif  || true
+          echo "http=$HTTP" >> "$GITHUB_OUTPUT"
+
+      - name: Upload scan artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsl-scan-${{ github.run_id }}
+          path: |
+            response.json
+            nsl.sarif
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always() && hashFiles('nsl.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: nsl.sarif
+
+      - name: Enforce gate
+        if: steps.scan.outputs.http != '200'
+        run: |
+          echo "NSL gate failed (HTTP ${{ steps.scan.outputs.http }})"
+          exit 1
