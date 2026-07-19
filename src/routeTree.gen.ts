@@ -13,12 +13,14 @@ import { Route as XssRouteImport } from './routes/xss'
 import { Route as TlsRouteImport } from './routes/tls'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SessionsRouteImport } from './routes/sessions'
+import { Route as ReconRouteImport } from './routes/recon'
 import { Route as HeadersRouteImport } from './routes/headers'
 import { Route as CsrfRouteImport } from './routes/csrf'
 import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ScanScanIdRouteImport } from './routes/scan.$scanId'
 
 const XssRoute = XssRouteImport.update({
   id: '/xss',
@@ -38,6 +40,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SessionsRoute = SessionsRouteImport.update({
   id: '/sessions',
   path: '/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReconRoute = ReconRouteImport.update({
+  id: '/recon',
+  path: '/recon',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HeadersRoute = HeadersRouteImport.update({
@@ -70,6 +77,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScanScanIdRoute = ScanScanIdRouteImport.update({
+  id: '/scan/$scanId',
+  path: '/scan/$scanId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -78,10 +90,12 @@ export interface FileRoutesByFullPath {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/recon': typeof ReconRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
   '/xss': typeof XssRoute
+  '/scan/$scanId': typeof ScanScanIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -90,10 +104,12 @@ export interface FileRoutesByTo {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/recon': typeof ReconRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
   '/xss': typeof XssRoute
+  '/scan/$scanId': typeof ScanScanIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,10 +119,12 @@ export interface FileRoutesById {
   '/cookies': typeof CookiesRoute
   '/csrf': typeof CsrfRoute
   '/headers': typeof HeadersRoute
+  '/recon': typeof ReconRoute
   '/sessions': typeof SessionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tls': typeof TlsRoute
   '/xss': typeof XssRoute
+  '/scan/$scanId': typeof ScanScanIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -117,10 +135,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/recon'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
     | '/xss'
+    | '/scan/$scanId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -129,10 +149,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/recon'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
     | '/xss'
+    | '/scan/$scanId'
   id:
     | '__root__'
     | '/'
@@ -141,10 +163,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/csrf'
     | '/headers'
+    | '/recon'
     | '/sessions'
     | '/sitemap.xml'
     | '/tls'
     | '/xss'
+    | '/scan/$scanId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -154,10 +178,12 @@ export interface RootRouteChildren {
   CookiesRoute: typeof CookiesRoute
   CsrfRoute: typeof CsrfRoute
   HeadersRoute: typeof HeadersRoute
+  ReconRoute: typeof ReconRoute
   SessionsRoute: typeof SessionsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TlsRoute: typeof TlsRoute
   XssRoute: typeof XssRoute
+  ScanScanIdRoute: typeof ScanScanIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -188,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/sessions'
       fullPath: '/sessions'
       preLoaderRoute: typeof SessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recon': {
+      id: '/recon'
+      path: '/recon'
+      fullPath: '/recon'
+      preLoaderRoute: typeof ReconRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/headers': {
@@ -232,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scan/$scanId': {
+      id: '/scan/$scanId'
+      path: '/scan/$scanId'
+      fullPath: '/scan/$scanId'
+      preLoaderRoute: typeof ScanScanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -242,10 +282,12 @@ const rootRouteChildren: RootRouteChildren = {
   CookiesRoute: CookiesRoute,
   CsrfRoute: CsrfRoute,
   HeadersRoute: HeadersRoute,
+  ReconRoute: ReconRoute,
   SessionsRoute: SessionsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TlsRoute: TlsRoute,
   XssRoute: XssRoute,
+  ScanScanIdRoute: ScanScanIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { ScanResult } from "./scan-types";
+import type { ReconCheck, ScanResult } from "./scan-types";
 
 interface DbScanRow {
   id: string;
@@ -18,11 +18,13 @@ interface DbScanRow {
   csrf: ScanResult["csrf"];
   xss: ScanResult["xss"];
   sessions: ScanResult["sessions"];
+  recon: ReconCheck[] | null;
   error: string | null;
   created_at: string;
 }
 
 function toResult(row: DbScanRow): ScanResult {
+  const scores = row.scores as Partial<ScanResult["scores"]> | null;
   return {
     id: row.id,
     targetUrl: row.target_url,
@@ -30,13 +32,22 @@ function toResult(row: DbScanRow): ScanResult {
     status: row.status as "complete" | "error",
     durationMs: row.duration_ms,
     overallScore: row.overall_score,
-    scores: row.scores,
-    headers: row.headers,
-    cookies: row.cookies,
+    scores: {
+      headers: scores?.headers ?? 0,
+      cookies: scores?.cookies ?? 0,
+      tls: scores?.tls ?? 0,
+      sessions: scores?.sessions ?? 0,
+      csrf: scores?.csrf ?? 0,
+      xss: scores?.xss ?? 0,
+      recon: scores?.recon ?? 100,
+    },
+    headers: row.headers ?? [],
+    cookies: row.cookies ?? [],
     tls: row.tls,
-    csrf: row.csrf,
-    xss: row.xss,
-    sessions: row.sessions,
+    csrf: row.csrf ?? [],
+    xss: row.xss ?? [],
+    sessions: row.sessions ?? [],
+    recon: row.recon ?? [],
     error: row.error,
     createdAt: row.created_at,
   };
@@ -47,11 +58,8 @@ export const getLatestScanForHost = createServerFn({ method: "POST" })
   .inputValidator((data: { host: string }) => z.object({ host: z.string().min(1) }).parse(data))
   .handler(async ({ data, context }): Promise<ScanResult | null> => {
     const { data: rows, error } = await context.supabase
-      .from("scans")
-      .select("*")
-      .eq("target_host", data.host)
-      .order("created_at", { ascending: false })
-      .limit(1);
+      .from("scans").select("*").eq("target_host", data.host)
+      .order("created_at", { ascending: false }).limit(1);
     if (error) throw new Error(error.message);
     if (!rows || rows.length === 0) return null;
     return toResult(rows[0] as unknown as DbScanRow);
@@ -61,12 +69,21 @@ export const listRecentScans = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<ScanResult[]> => {
     const { data: rows, error } = await context.supabase
-      .from("scans")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
+      .from("scans").select("*")
+      .order("created_at", { ascending: false }).limit(100);
     if (error) throw new Error(error.message);
     return (rows ?? []).map((r) => toResult(r as unknown as DbScanRow));
+  });
+
+export const getScanById = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { id: string }) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }): Promise<ScanResult | null> => {
+    const { data: row, error } = await context.supabase
+      .from("scans").select("*").eq("id", data.id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) return null;
+    return toResult(row as unknown as DbScanRow);
   });
 
 export const deleteScan = createServerFn({ method: "POST" })

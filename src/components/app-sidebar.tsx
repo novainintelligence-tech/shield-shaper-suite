@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   LogIn,
   LogOut,
+  Radar,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ const modules = [
   { title: "Session Security", url: "/sessions", icon: KeyRound },
   { title: "HTTP Headers", url: "/headers", icon: ServerCog },
   { title: "TLS Checker", url: "/tls", icon: LockKeyhole },
+  { title: "Reconnaissance", url: "/recon", icon: Radar },
   { title: "Scan History", url: "/audit", icon: ScrollText },
 ];
 

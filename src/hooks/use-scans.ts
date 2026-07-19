@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import { useTarget } from "@/components/target-selector";
 import { useSession } from "@/hooks/use-session";
-import { getLatestScanForHost, listRecentScans } from "@/lib/scans.functions";
+import { getLatestScanForHost, getScanById, listRecentScans } from "@/lib/scans.functions";
 
 export function useLatestScan() {
   const { target } = useTarget();
@@ -31,5 +31,16 @@ export function useRecentScans() {
     queryFn: () => fn(),
     enabled: !!session,
     staleTime: 30_000,
+  });
+}
+
+export function useScanById(id: string | undefined) {
+  const { session } = useSession();
+  const fn = useServerFn(getScanById);
+  return useQuery({
+    queryKey: ["scan", id, session?.user.id],
+    queryFn: () => fn({ data: { id: id! } }),
+    enabled: !!session && !!id,
+    staleTime: 60_000,
   });
 }

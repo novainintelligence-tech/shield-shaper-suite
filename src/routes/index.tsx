@@ -8,7 +8,7 @@ import {
   KeyRound,
   ServerCog,
   LockKeyhole,
-  ScrollText,
+  Radar,
 } from "lucide-react";
 
 import { PageHeader, PageShell } from "@/components/page-header";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanRunner } from "@/components/scan-runner";
 import { EmptyScanState } from "@/components/empty-scan-state";
+import { ExportPdfButton } from "@/components/export-pdf-button";
 import { useLatestScan, useRecentScans } from "@/hooks/use-scans";
 
 export const Route = createFileRoute("/")({
@@ -41,6 +42,7 @@ const moduleLinks = [
   { key: "sessions", title: "Session Security", href: "/sessions", icon: KeyRound },
   { key: "csrf", title: "CSRF Validator", href: "/csrf", icon: ShieldAlert },
   { key: "xss", title: "XSS Test Suite", href: "/xss", icon: Bug },
+  { key: "recon", title: "Reconnaissance", href: "/recon", icon: Radar },
 ] as const;
 
 function severityForScore(score: number): Severity {
@@ -62,6 +64,7 @@ function Dashboard() {
         actions={
           <>
             <ScanRunner label="Run scan" />
+            <ExportPdfButton scan={latest} />
             <Button size="sm" variant="outline" disabled={!history || history.length === 0}>
               <Activity className="h-4 w-4" />
               {history?.length ?? 0} in history
