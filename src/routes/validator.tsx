@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { PlayCircle, Loader2, FileDown } from "lucide-react";
+import { PlayCircle, Loader2, FileDown, Target, ShieldAlert } from "lucide-react";
 
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,14 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { RawBlock } from "@/components/raw-block";
 import { ScanRunner } from "@/components/scan-runner";
 import { EmptyScanState } from "@/components/empty-scan-state";
 import { FindingValidator, isActiveFinding } from "@/components/finding-validator";
 import { useLatestScan } from "@/hooks/use-scans";
 import { buildFindings, type RiskRating } from "@/lib/engagement";
 import { useServerFn } from "@tanstack/react-start";
-import { runValidation, type ValidationResult } from "@/lib/validator.functions";
+import { runValidation, runStandalonePoc, POC_LIBRARY, type ValidationResult, type Verdict } from "@/lib/validator.functions";
+import { toCurl } from "@/lib/validator-command";
 import { downloadValidatorPdf } from "@/lib/validator-pdf";
 import { toast } from "sonner";
 
