@@ -9,8 +9,62 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as XssRouteImport } from './routes/xss'
+import { Route as TlsRouteImport } from './routes/tls'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SessionsRouteImport } from './routes/sessions'
+import { Route as HeadersRouteImport } from './routes/headers'
+import { Route as CsrfRouteImport } from './routes/csrf'
+import { Route as CookiesRouteImport } from './routes/cookies'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuditRouteImport } from './routes/audit'
 import { Route as IndexRouteImport } from './routes/index'
 
+const XssRoute = XssRouteImport.update({
+  id: '/xss',
+  path: '/xss',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TlsRoute = TlsRouteImport.update({
+  id: '/tls',
+  path: '/tls',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SessionsRoute = SessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HeadersRoute = HeadersRouteImport.update({
+  id: '/headers',
+  path: '/headers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CsrfRoute = CsrfRouteImport.update({
+  id: '/csrf',
+  path: '/csrf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CookiesRoute = CookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditRoute = AuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +73,158 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/audit': typeof AuditRoute
+  '/auth': typeof AuthRoute
+  '/cookies': typeof CookiesRoute
+  '/csrf': typeof CsrfRoute
+  '/headers': typeof HeadersRoute
+  '/sessions': typeof SessionsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tls': typeof TlsRoute
+  '/xss': typeof XssRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/audit': typeof AuditRoute
+  '/auth': typeof AuthRoute
+  '/cookies': typeof CookiesRoute
+  '/csrf': typeof CsrfRoute
+  '/headers': typeof HeadersRoute
+  '/sessions': typeof SessionsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tls': typeof TlsRoute
+  '/xss': typeof XssRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/audit': typeof AuditRoute
+  '/auth': typeof AuthRoute
+  '/cookies': typeof CookiesRoute
+  '/csrf': typeof CsrfRoute
+  '/headers': typeof HeadersRoute
+  '/sessions': typeof SessionsRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tls': typeof TlsRoute
+  '/xss': typeof XssRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/audit'
+    | '/auth'
+    | '/cookies'
+    | '/csrf'
+    | '/headers'
+    | '/sessions'
+    | '/sitemap.xml'
+    | '/tls'
+    | '/xss'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/audit'
+    | '/auth'
+    | '/cookies'
+    | '/csrf'
+    | '/headers'
+    | '/sessions'
+    | '/sitemap.xml'
+    | '/tls'
+    | '/xss'
+  id:
+    | '__root__'
+    | '/'
+    | '/audit'
+    | '/auth'
+    | '/cookies'
+    | '/csrf'
+    | '/headers'
+    | '/sessions'
+    | '/sitemap.xml'
+    | '/tls'
+    | '/xss'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuditRoute: typeof AuditRoute
+  AuthRoute: typeof AuthRoute
+  CookiesRoute: typeof CookiesRoute
+  CsrfRoute: typeof CsrfRoute
+  HeadersRoute: typeof HeadersRoute
+  SessionsRoute: typeof SessionsRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TlsRoute: typeof TlsRoute
+  XssRoute: typeof XssRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/xss': {
+      id: '/xss'
+      path: '/xss'
+      fullPath: '/xss'
+      preLoaderRoute: typeof XssRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tls': {
+      id: '/tls'
+      path: '/tls'
+      fullPath: '/tls'
+      preLoaderRoute: typeof TlsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sessions': {
+      id: '/sessions'
+      path: '/sessions'
+      fullPath: '/sessions'
+      preLoaderRoute: typeof SessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/headers': {
+      id: '/headers'
+      path: '/headers'
+      fullPath: '/headers'
+      preLoaderRoute: typeof HeadersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/csrf': {
+      id: '/csrf'
+      path: '/csrf'
+      fullPath: '/csrf'
+      preLoaderRoute: typeof CsrfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cookies': {
+      id: '/cookies'
+      path: '/cookies'
+      fullPath: '/cookies'
+      preLoaderRoute: typeof CookiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +237,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuditRoute: AuditRoute,
+  AuthRoute: AuthRoute,
+  CookiesRoute: CookiesRoute,
+  CsrfRoute: CsrfRoute,
+  HeadersRoute: HeadersRoute,
+  SessionsRoute: SessionsRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TlsRoute: TlsRoute,
+  XssRoute: XssRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
