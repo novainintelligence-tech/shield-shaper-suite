@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NSL Session Capture</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        width: 420px;
+        margin: 0;
+        padding: 14px;
+        background: #0b1220;
+        color: #e5edff;
+        font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { font-size: 14px; margin: 0 0 4px; letter-spacing: 0.02em; }
+      p.sub { margin: 0 0 12px; color: #8ea0c9; font-size: 11px; }
+      .row { display: flex; gap: 8px; margin-bottom: 10px; }
+      button {
+        flex: 1;
+        background: #1e3a8a;
+        color: #fff;
+        border: 1px solid #3b82f6;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button:hover { background: #2648a8; }
+      button.secondary { background: transparent; border-color: #334155; color: #cbd5e1; }
+      .summary {
+        background: #111a2e;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+        font-size: 11px;
+      }
+      .summary b { color: #60a5fa; }
+      pre {
+        background: #05070d;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 8px;
+        max-height: 260px;
+        overflow: auto;
+        font-size: 11px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .status { font-size: 11px; color: #8ea0c9; margin-top: 6px; }
+      .ok { color: #22c55e; }
+      .err { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <h1>NSL Session Capture</h1>
+    <p class="sub">Extracts cookies (incl. HttpOnly), localStorage &amp; sessionStorage.</p>
+    <div class="row">
+      <button id="active">Active tab</button>
+      <button id="all">All open tabs</button>
+    </div>
+    <div class="row">
+      <button id="copy" class="secondary">Copy JSON</button>
+      <button id="download" class="secondary">Download</button>
+    </div>
+    <div id="summary" class="summary" hidden></div>
+    <pre id="output">Click a capture button above.</pre>
+    <div id="status" class="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
