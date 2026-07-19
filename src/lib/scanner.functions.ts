@@ -4,14 +4,22 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type {
   CookieRow,
+  CorsProbeEvidence,
+  CrtShEntry,
   CsrfCheck,
   HeaderRow,
+  HeadersDump,
+  PathProbeEvidence,
+  PrimaryResponseEvidence,
   ReconCheck,
+  RedirectProbeEvidence,
+  ScanEvidence,
   ScanResult,
   ScoreBreakdown,
   SessionCheck,
   TlsResult,
   XssCase,
+  XssProbeEvidence,
 } from "./scan-types";
 import type { Severity } from "@/components/severity-badge";
 
@@ -22,9 +30,30 @@ const urlSchema = z.object({
   ),
 });
 
-const UA = "NSL-Scanner/1.1 (+https://novain-security-lab.dev)";
+const UA = "NSL-Scanner/1.2 (+https://novain-security-lab.dev)";
 
-// ---------- Header analysis ----------
+// ---------- helpers ----------
+
+function dumpHeaders(h: Headers): HeadersDump {
+  const out: HeadersDump = {};
+  h.forEach((v, k) => {
+    out[k] = out[k] ? `${out[k]}, ${v}` : v;
+  });
+  return out;
+}
+
+async function readSnippet(res: Response, cap: number): Promise<{ text: string; bytes: number; truncated: boolean }> {
+  try {
+    const raw = await res.text();
+    const bytes = raw.length;
+    if (bytes <= cap) return { text: raw, bytes, truncated: false };
+    return { text: raw.slice(0, cap), bytes, truncated: true };
+  } catch {
+    return { text: "", bytes: 0, truncated: false };
+  }
+}
+
+// ---------- Header analysis (unchanged rules) ----------
 
 interface HeaderSpec {
   name: string;
@@ -69,12 +98,10 @@ const HEADER_SPECS: HeaderSpec[] = [
     expected: "DENY or SAMEORIGIN (or CSP frame-ancestors)",
     evaluate: (v, all) => {
       const csp = (all.get("content-security-policy") ?? "").toLowerCase();
-      if (!v && csp.includes("frame-ancestors"))
-        return { severity: "pass", note: "Handled by CSP frame-ancestors." };
+      if (!v && csp.includes("frame-ancestors")) return { severity: "pass", note: "Handled by CSP frame-ancestors." };
       if (!v) return { severity: "warn", note: "Missing. No clickjacking protection." };
       const upper = v.toUpperCase();
-      if (upper.includes("DENY") || upper.includes("SAMEORIGIN"))
-        return { severity: "pass", note: "Clickjacking protection is active." };
+      if (upper.includes("DENY") || upper.includes("SAMEORIGIN")) return { severity: "pass", note: "Clickjacking protection is active." };
       return { severity: "warn", note: `Unusual value: ${v}` };
     },
   },
@@ -203,7 +230,6 @@ function parseSetCookies(setCookies: string[], host: string): CookieRow[] {
     if (!secure || sameSite === "None") severity = "fail";
     else if (!httpOnly || sameSite === "Missing") severity = "warn";
 
-    // Cookie prefix compliance (RFC 6265bis)
     if (name.startsWith("__Host-")) {
       if (!secure) { severity = "fail"; notes.push("__Host- prefix requires Secure."); }
       if (path !== "/") { severity = "fail"; notes.push("__Host- prefix requires Path=/."); }
@@ -217,6 +243,7 @@ function parseSetCookies(setCookies: string[], host: string): CookieRow[] {
       name, domain, path, httpOnly, secure, sameSite, expires,
       jsAccessible: !httpOnly, severity,
       note: notes.length ? notes.join(" ") : undefined,
+      raw,
     };
   });
 }
@@ -242,59 +269,66 @@ function analyseTls(url: URL, headers: Headers): TlsResult {
     hstsPresent: !!hstsHeader, hstsPreloaded: preload, hstsMaxAge, hstsIncludeSubDomains: includeSub,
     issuer: null, validFrom: null, validTo: null, daysRemaining: null,
     severity, note,
+    rawHstsHeader: hstsHeader,
   };
 }
 
-async function enrichTlsWithCert(tls: TlsResult): Promise<TlsResult> {
-  if (tls.scheme !== "https") return tls;
+async function enrichTlsWithCert(tls: TlsResult): Promise<{ tls: TlsResult; entries: CrtShEntry[] | null }> {
+  if (tls.scheme !== "https") return { tls, entries: null };
   try {
     const res = await fetch(
       `https://crt.sh/?q=${encodeURIComponent(tls.host)}&output=json`,
       { signal: AbortSignal.timeout(6000) },
     );
-    if (!res.ok) return tls;
-    const rows = (await res.json()) as Array<{ issuer_name?: string; not_before?: string; not_after?: string }>;
-    if (!Array.isArray(rows) || rows.length === 0) return tls;
+    if (!res.ok) return { tls, entries: null };
+    const rows = (await res.json()) as CrtShEntry[];
+    if (!Array.isArray(rows) || rows.length === 0) return { tls, entries: [] };
     const now = Date.now();
     const active = rows
       .filter((r) => r.not_after && new Date(r.not_after).getTime() > now)
       .sort((a, b) => new Date(b.not_before!).getTime() - new Date(a.not_before!).getTime());
     const chosen = active[0] ?? rows[0];
-    if (!chosen?.not_after) return tls;
+    if (!chosen?.not_after) return { tls, entries: rows.slice(0, 20) };
     const daysRemaining = Math.round((new Date(chosen.not_after).getTime() - now) / (1000 * 60 * 60 * 24));
     let severity = tls.severity;
     let note = tls.note;
     if (daysRemaining < 14) { severity = "fail"; note = `Certificate expires in ${daysRemaining} days.`; }
     else if (daysRemaining < 30 && severity === "pass") { severity = "warn"; note = `Certificate expires in ${daysRemaining} days.`; }
     return {
-      ...tls,
-      issuer: chosen.issuer_name?.split(",").find((p) => p.trim().startsWith("O="))?.replace(/^\s*O=/, "") ?? chosen.issuer_name ?? null,
-      validFrom: chosen.not_before ?? null,
-      validTo: chosen.not_after ?? null,
-      daysRemaining, severity, note,
+      tls: {
+        ...tls,
+        issuer:
+          chosen.issuer_name?.split(",").find((p) => p.trim().startsWith("O="))?.replace(/^\s*O=/, "") ??
+          chosen.issuer_name ?? null,
+        validFrom: chosen.not_before ?? null,
+        validTo: chosen.not_after ?? null,
+        daysRemaining, severity, note,
+      },
+      entries: rows.slice(0, 20),
     };
-  } catch { return tls; }
+  } catch { return { tls, entries: null }; }
 }
 
 // ---------- CSRF ----------
 
-function analyseCsrf(html: string, cookies: CookieRow[], baseUrl: URL): CsrfCheck[] {
-  const forms: CsrfCheck[] = [];
-  const formRegex = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
-  let match: RegExpExecArray | null;
+function analyseCsrf(html: string, cookies: CookieRow[], baseUrl: URL): { rows: CsrfCheck[]; forms: string[] } {
+  const rows: CsrfCheck[] = [];
+  const forms: string[] = [];
+  const formRegex = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
   const sessionCookie = cookies.find((c) => /session|sid|auth|jwt|token/i.test(c.name));
   const sameSiteHint: CsrfCheck["sameSiteHint"] = sessionCookie
     ? (sessionCookie.sameSite === "Missing" ? "Unknown" : sessionCookie.sameSite)
     : "Unknown";
-
   const metaTokenPresent = /<meta[^>]+name\s*=\s*["'](csrf-token|csrf_token|_csrf|_token|xsrf-token)["'][^>]*>/i.test(html);
 
-  while ((match = formRegex.exec(html)) !== null) {
-    const attrs = match[1];
-    const body = match[2];
-    const methodMatch = /method\s*=\s*["']?(\w+)/i.exec(attrs);
+  const matches = html.match(formRegex) ?? [];
+  for (const full of matches) {
+    forms.push(full.slice(0, 4000));
+    const openTag = /<form\b([^>]*)>/i.exec(full)?.[1] ?? "";
+    const body = full.replace(/<form\b[^>]*>/i, "").replace(/<\/form>$/i, "");
+    const methodMatch = /method\s*=\s*["']?(\w+)/i.exec(openTag);
     const method = (methodMatch?.[1]?.toUpperCase() ?? "GET") as CsrfCheck["method"];
-    const actionMatch = /action\s*=\s*["']([^"']*)/i.exec(attrs);
+    const actionMatch = /action\s*=\s*["']([^"']*)/i.exec(openTag);
     const action = actionMatch?.[1] ?? "";
     let endpoint = action || baseUrl.pathname;
     try { endpoint = new URL(action || baseUrl.pathname, baseUrl).pathname; } catch { /* ignore */ }
@@ -310,18 +344,17 @@ function analyseCsrf(html: string, cookies: CookieRow[], baseUrl: URL): CsrfChec
     else if (!tokenFound && sameSiteHint === "Lax") { severity = "warn"; note = "No token; SameSite=Lax mitigates most cross-site POSTs but not top-level GET→POST."; }
     else if (!tokenFound) { severity = "fail"; note = "No CSRF token and session cookie SameSite is None/Missing."; }
 
-    forms.push({ endpoint, method, tokenFound, sameSiteHint, severity, note });
-    if (forms.length >= 25) break;
+    rows.push({ endpoint, method, tokenFound, sameSiteHint, severity, note, rawForm: full.slice(0, 4000) });
+    if (rows.length >= 25) break;
   }
 
-  if (forms.length === 0) {
-    forms.push({
+  if (rows.length === 0) {
+    rows.push({
       endpoint: baseUrl.pathname, method: "POST", tokenFound: false, sameSiteHint,
-      severity: "info" as Severity,
-      note: "No state-changing HTML forms found on this page.",
+      severity: "info", note: "No state-changing HTML forms found on this page.",
     });
   }
-  return forms;
+  return { rows, forms };
 }
 
 // ---------- XSS ----------
@@ -355,28 +388,45 @@ function analyseXss(headers: HeaderRow[]): XssCase[] {
   return cases;
 }
 
-async function probeReflectedXss(url: URL): Promise<XssCase[]> {
+async function probeReflectedXss(url: URL): Promise<{ cases: XssCase[]; evidence: XssProbeEvidence | null }> {
   const canary = `nsl${Math.random().toString(36).slice(2, 10)}zz`;
+  const payload = `<script>${canary}</script>`;
   const probeUrl = new URL(url.toString());
-  probeUrl.searchParams.set("nsl_probe", `<script>${canary}</script>`);
+  probeUrl.searchParams.set("nsl_probe", payload);
   try {
     const res = await fetch(probeUrl.toString(), {
       redirect: "follow",
       headers: { "User-Agent": UA, Accept: "text/html" },
       signal: AbortSignal.timeout(10000),
     });
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("text/html")) return [];
-    const body = (await res.text()).slice(0, 500_000);
-    const raw = body.includes(`<script>${canary}</script>`);
-    const encoded = body.includes(`&lt;script&gt;${canary}&lt;/script&gt;`) || body.includes(canary);
-    if (raw) return [{ id: "XSS-REFLECT-RAW", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "fail", detail: "Payload reflected verbatim — reflected XSS sink." }];
-    if (encoded) return [{ id: "XSS-REFLECT-ENC", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "pass", detail: "Payload reflected but HTML-escaped." }];
-    return [{ id: "XSS-REFLECT-NONE", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "pass", detail: "Payload not reflected." }];
-  } catch { return []; }
+    const headers = dumpHeaders(res.headers);
+    const contentType = res.headers.get("content-type");
+    const snippet = await readSnippet(res, 12000);
+
+    const raw = snippet.text.includes(payload);
+    const encoded = snippet.text.includes(`&lt;script&gt;${canary}&lt;/script&gt;`) || snippet.text.includes(canary);
+
+    let reflectionMatch: string | null = null;
+    const idx = snippet.text.indexOf(canary);
+    if (idx >= 0) reflectionMatch = snippet.text.slice(Math.max(0, idx - 80), Math.min(snippet.text.length, idx + 80));
+
+    const evidence: XssProbeEvidence = {
+      requestUrl: probeUrl.toString(),
+      payload, canary,
+      status: res.status, statusText: res.statusText,
+      contentType, headers, reflectionMatch,
+      bodySnippet: snippet.text,
+    };
+
+    let cases: XssCase[];
+    if (raw) cases = [{ id: "XSS-REFLECT-RAW", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "fail", detail: "Payload reflected verbatim — reflected XSS sink." }];
+    else if (encoded) cases = [{ id: "XSS-REFLECT-ENC", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "pass", detail: "Payload reflected but HTML-escaped." }];
+    else cases = [{ id: "XSS-REFLECT-NONE", vector: "?nsl_probe=<script>…</script>", category: "Reflected", severity: "pass", detail: "Payload not reflected." }];
+    return { cases, evidence };
+  } catch { return { cases: [], evidence: null }; }
 }
 
-async function probeCors(url: URL): Promise<XssCase[]> {
+async function probeCors(url: URL): Promise<{ cases: XssCase[]; evidence: CorsProbeEvidence | null }> {
   const attacker = "https://nsl-scanner.example";
   try {
     const res = await fetch(url.toString(), {
@@ -384,15 +434,25 @@ async function probeCors(url: URL): Promise<XssCase[]> {
       headers: { Origin: attacker, "User-Agent": UA },
       signal: AbortSignal.timeout(8000),
     });
+    const headers = dumpHeaders(res.headers);
+    const evidence: CorsProbeEvidence = {
+      requestUrl: url.toString(), requestOrigin: attacker,
+      status: res.status, statusText: res.statusText, headers,
+    };
+    // drain body (ignore)
+    try { await res.arrayBuffer(); } catch { /* ignore */ }
+
     const acao = res.headers.get("access-control-allow-origin") ?? "";
     const acac = (res.headers.get("access-control-allow-credentials") ?? "").toLowerCase() === "true";
-    if (!acao) return [{ id: "XSS-CORS-OK", vector: "Origin reflection probe", category: "CORS", severity: "pass", detail: "No CORS headers exposed to arbitrary origins." }];
-    if (acao === attacker && acac) return [{ id: "XSS-CORS-REFLECT", vector: "ACAO reflects Origin + credentials", category: "CORS", severity: "fail", detail: `Origin ${attacker} reflected with credentials — full CORS bypass.` }];
-    if (acao === attacker) return [{ id: "XSS-CORS-REFLECT-NC", vector: "ACAO reflects Origin", category: "CORS", severity: "warn", detail: "Arbitrary origin reflected (no credentials). Responses readable cross-origin." }];
-    if (acao === "*" && acac) return [{ id: "XSS-CORS-CRIT", vector: "ACAO:* + credentials", category: "CORS", severity: "fail", detail: "Dangerous CORS intent (browser blocks but signals misconfig)." }];
-    if (acao === "*") return [{ id: "XSS-CORS-WILD", vector: "ACAO:*", category: "CORS", severity: "warn", detail: "Wildcard CORS — safe without credentials but exposes all responses." }];
-    return [{ id: "XSS-CORS-SCOPED", vector: `ACAO: ${acao}`, category: "CORS", severity: "pass", detail: "CORS scoped to a specific origin." }];
-  } catch { return []; }
+    let cases: XssCase[];
+    if (!acao) cases = [{ id: "XSS-CORS-OK", vector: "Origin reflection probe", category: "CORS", severity: "pass", detail: "No CORS headers exposed to arbitrary origins." }];
+    else if (acao === attacker && acac) cases = [{ id: "XSS-CORS-REFLECT", vector: "ACAO reflects Origin + credentials", category: "CORS", severity: "fail", detail: `Origin ${attacker} reflected with credentials — full CORS bypass.` }];
+    else if (acao === attacker) cases = [{ id: "XSS-CORS-REFLECT-NC", vector: "ACAO reflects Origin", category: "CORS", severity: "warn", detail: "Arbitrary origin reflected (no credentials). Responses readable cross-origin." }];
+    else if (acao === "*" && acac) cases = [{ id: "XSS-CORS-CRIT", vector: "ACAO:* + credentials", category: "CORS", severity: "fail", detail: "Dangerous CORS intent (browser blocks but signals misconfig)." }];
+    else if (acao === "*") cases = [{ id: "XSS-CORS-WILD", vector: "ACAO:*", category: "CORS", severity: "warn", detail: "Wildcard CORS — safe without credentials but exposes all responses." }];
+    else cases = [{ id: "XSS-CORS-SCOPED", vector: `ACAO: ${acao}`, category: "CORS", severity: "pass", detail: "CORS scoped to a specific origin." }];
+    return { cases, evidence };
+  } catch { return { cases: [], evidence: null }; }
 }
 
 // ---------- Sessions ----------
@@ -432,73 +492,102 @@ const EXPOSURE_PATHS: Array<{ p: string; name: string; critical: boolean }> = [
   { p: "/actuator", name: "Spring actuator", critical: true },
 ];
 
-async function probeExposure(base: URL): Promise<ReconCheck[]> {
-  return Promise.all(EXPOSURE_PATHS.map(async ({ p, name, critical }) => {
+async function probeExposure(base: URL): Promise<{ rows: ReconCheck[]; evidence: PathProbeEvidence[] }> {
+  const results = await Promise.all(EXPOSURE_PATHS.map(async ({ p, name, critical }) => {
+    const requestUrl = new URL(p, `${base.origin}/`).toString();
     try {
-      const u = new URL(p, `${base.origin}/`);
-      const res = await fetch(u.toString(), {
+      const res = await fetch(requestUrl, {
         method: "GET", redirect: "manual",
-        headers: { "User-Agent": UA, Range: "bytes=0-256" },
+        headers: { "User-Agent": UA, Range: "bytes=0-512" },
         signal: AbortSignal.timeout(6000),
       });
+      const headers = dumpHeaders(res.headers);
+      const snippet = await readSnippet(res, 800);
+      let row: ReconCheck;
       if (res.status === 200 || res.status === 206) {
-        return { id: `EXP:${p}`, category: "exposure" as const, name,
+        row = { id: `EXP:${p}`, category: "exposure", name,
           severity: (critical ? "fail" : "warn") as Severity,
           note: `HTTP ${res.status} — endpoint served content. Verify it does not leak secrets or admin functionality.`,
           target: p };
-      }
-      if (res.status === 401 || res.status === 403) {
-        return { id: `EXP:${p}`, category: "exposure" as const, name,
-          severity: "info" as Severity,
+      } else if (res.status === 401 || res.status === 403) {
+        row = { id: `EXP:${p}`, category: "exposure", name, severity: "info",
           note: `HTTP ${res.status} — endpoint exists but is access-controlled.`, target: p };
+      } else {
+        row = { id: `EXP:${p}`, category: "exposure", name, severity: "pass",
+          note: `HTTP ${res.status} — not exposed.`, target: p };
       }
-      return { id: `EXP:${p}`, category: "exposure" as const, name,
-        severity: "pass" as Severity, note: `HTTP ${res.status} — not exposed.`, target: p };
-    } catch {
-      return { id: `EXP:${p}`, category: "exposure" as const, name,
-        severity: "pass" as Severity, note: "Request failed / timed out.", target: p };
+      const evidence: PathProbeEvidence = {
+        path: p, requestUrl, method: "GET",
+        status: res.status, statusText: res.statusText,
+        headers, bodySnippet: snippet.text, bodyBytes: snippet.bytes,
+      };
+      return { row, evidence };
+    } catch (e) {
+      const row: ReconCheck = { id: `EXP:${p}`, category: "exposure", name, severity: "pass",
+        note: `Request failed: ${e instanceof Error ? e.message : "unknown error"}.`, target: p };
+      const evidence: PathProbeEvidence = {
+        path: p, requestUrl, method: "GET",
+        status: 0, statusText: "network error",
+        headers: {}, bodySnippet: "", bodyBytes: 0,
+      };
+      return { row, evidence };
     }
   }));
+  return { rows: results.map((r) => r.row), evidence: results.map((r) => r.evidence) };
 }
 
-async function probeMeta(base: URL): Promise<ReconCheck[]> {
-  const checks: Array<{ p: string; name: string; missingSev: Severity; missingNote: string }> = [
+async function probeMeta(base: URL): Promise<{ rows: ReconCheck[]; evidence: PathProbeEvidence[] }> {
+  const paths: Array<{ p: string; name: string; missingSev: Severity; missingNote: string }> = [
     { p: "/.well-known/security.txt", name: "security.txt", missingSev: "warn", missingNote: "No security.txt — vulnerability reporting channel is not published." },
     { p: "/robots.txt", name: "robots.txt", missingSev: "info", missingNote: "No robots.txt served." },
     { p: "/sitemap.xml", name: "sitemap.xml", missingSev: "info", missingNote: "No sitemap.xml served." },
   ];
-  return Promise.all(checks.map(async ({ p, name, missingSev, missingNote }) => {
+  const results = await Promise.all(paths.map(async ({ p, name, missingSev, missingNote }) => {
+    const requestUrl = new URL(p, `${base.origin}/`).toString();
     try {
-      const u = new URL(p, `${base.origin}/`);
-      const res = await fetch(u.toString(), {
+      const res = await fetch(requestUrl, {
         method: "GET", redirect: "manual",
         headers: { "User-Agent": UA }, signal: AbortSignal.timeout(6000),
       });
-      if (res.status === 200) {
-        return { id: `META:${p}`, category: "meta" as const, name,
-          severity: "pass" as Severity, note: `HTTP 200 — ${name} present.`, target: p };
-      }
-      return { id: `META:${p}`, category: "meta" as const, name, severity: missingSev, note: missingNote, target: p };
-    } catch {
-      return { id: `META:${p}`, category: "meta" as const, name, severity: "info" as Severity, note: "Probe failed.", target: p };
+      const headers = dumpHeaders(res.headers);
+      const snippet = await readSnippet(res, 2000);
+      const row: ReconCheck = res.status === 200
+        ? { id: `META:${p}`, category: "meta", name, severity: "pass", note: `HTTP 200 — ${name} present.`, target: p }
+        : { id: `META:${p}`, category: "meta", name, severity: missingSev, note: missingNote, target: p };
+      const evidence: PathProbeEvidence = {
+        path: p, requestUrl, method: "GET",
+        status: res.status, statusText: res.statusText,
+        headers, bodySnippet: snippet.text, bodyBytes: snippet.bytes,
+      };
+      return { row, evidence };
+    } catch (e) {
+      const row: ReconCheck = { id: `META:${p}`, category: "meta", name, severity: "info",
+        note: `Probe failed: ${e instanceof Error ? e.message : "unknown error"}.`, target: p };
+      const evidence: PathProbeEvidence = {
+        path: p, requestUrl, method: "GET",
+        status: 0, statusText: "network error",
+        headers: {}, bodySnippet: "", bodyBytes: 0,
+      };
+      return { row, evidence };
     }
   }));
+  return { rows: results.map((r) => r.row), evidence: results.map((r) => r.evidence) };
 }
 
-function analyseMixedContent(html: string, base: URL): ReconCheck[] {
-  if (base.protocol !== "https:") return [];
-  const httpRefs = (html.match(/(?:src|href)\s*=\s*["']http:\/\/[^"']+/gi) ?? []).slice(0, 20);
-  if (httpRefs.length === 0) {
-    return [{ id: "MIX:none", category: "mixed-content", name: "Mixed content", severity: "pass", note: "No http:// subresources found in initial HTML." }];
+function analyseMixedContent(html: string, base: URL): { rows: ReconCheck[]; refs: string[] } {
+  if (base.protocol !== "https:") return { rows: [], refs: [] };
+  const refs = (html.match(/(?:src|href)\s*=\s*["']http:\/\/[^"']+/gi) ?? []).slice(0, 50);
+  if (refs.length === 0) {
+    return { rows: [{ id: "MIX:none", category: "mixed-content", name: "Mixed content", severity: "pass", note: "No http:// subresources found in initial HTML." }], refs: [] };
   }
-  return [{ id: "MIX:found", category: "mixed-content", name: "Mixed content", severity: "fail",
-    note: `${httpRefs.length} http:// subresource references on an HTTPS page. Example: ${httpRefs[0].slice(0, 120)}` }];
+  return { rows: [{ id: "MIX:found", category: "mixed-content", name: "Mixed content", severity: "fail",
+    note: `${refs.length} http:// subresource references on an HTTPS page.` }], refs };
 }
 
-async function probeRedirect(base: URL): Promise<ReconCheck[]> {
+async function probeRedirect(base: URL): Promise<{ rows: ReconCheck[]; evidence: RedirectProbeEvidence | null }> {
   if (base.protocol !== "https:") {
-    return [{ id: "RED:http", category: "redirect", name: "HTTPS enforcement", severity: "fail",
-      note: "Target is served over http:// — no TLS enforcement." }];
+    return { rows: [{ id: "RED:http", category: "redirect", name: "HTTPS enforcement", severity: "fail",
+      note: "Target is served over http:// — no TLS enforcement." }], evidence: null };
   }
   const httpUrl = `http://${base.host}${base.pathname}`;
   try {
@@ -506,17 +595,23 @@ async function probeRedirect(base: URL): Promise<ReconCheck[]> {
       method: "HEAD", redirect: "manual",
       headers: { "User-Agent": UA }, signal: AbortSignal.timeout(6000),
     });
-    const loc = res.headers.get("location") ?? "";
-    if (res.status >= 300 && res.status < 400 && loc.startsWith("https://")) {
-      return [{ id: "RED:https", category: "redirect", name: "HTTP → HTTPS redirect", severity: "pass", note: `HTTP ${res.status} → ${loc}` }];
-    }
-    if (res.status >= 200 && res.status < 300) {
-      return [{ id: "RED:plain", category: "redirect", name: "Plain HTTP accepted", severity: "fail",
+    const headers = dumpHeaders(res.headers);
+    const location = res.headers.get("location");
+    const evidence: RedirectProbeEvidence = {
+      requestUrl: httpUrl, status: res.status, statusText: res.statusText, location, headers,
+    };
+    let rows: ReconCheck[];
+    if (res.status >= 300 && res.status < 400 && location?.startsWith("https://")) {
+      rows = [{ id: "RED:https", category: "redirect", name: "HTTP → HTTPS redirect", severity: "pass", note: `HTTP ${res.status} → ${location}` }];
+    } else if (res.status >= 200 && res.status < 300) {
+      rows = [{ id: "RED:plain", category: "redirect", name: "Plain HTTP accepted", severity: "fail",
         note: `HTTP ${res.status} on http:// — plaintext content served without upgrade.` }];
+    } else {
+      rows = [{ id: "RED:other", category: "redirect", name: "HTTP endpoint response", severity: "info", note: `HTTP ${res.status} on http:// endpoint.` }];
     }
-    return [{ id: "RED:other", category: "redirect", name: "HTTP endpoint response", severity: "info", note: `HTTP ${res.status} on http:// endpoint.` }];
+    return { rows, evidence };
   } catch {
-    return [{ id: "RED:closed", category: "redirect", name: "HTTP endpoint", severity: "pass", note: "http:// port not reachable — TLS-only." }];
+    return { rows: [{ id: "RED:closed", category: "redirect", name: "HTTP endpoint", severity: "pass", note: "http:// port not reachable — TLS-only." }], evidence: null };
   }
 }
 
@@ -556,26 +651,51 @@ async function performScan(rawUrl: string): Promise<Omit<ScanResult, "id" | "cre
         host: url.host, scheme: url.protocol === "https:" ? "https" : "http",
         hstsPresent: false, hstsPreloaded: false, hstsMaxAge: null, hstsIncludeSubDomains: false,
         issuer: null, validFrom: null, validTo: null, daysRemaining: null,
-        severity: "fail", note: `Fetch failed: ${err}`,
+        severity: "fail", note: `Fetch failed: ${err}`, rawHstsHeader: null,
       },
       csrf: [], xss: [], sessions: [], recon: [],
+      evidence: {
+        primary: null, setCookies: [], forms: [], mixedContentRefs: [],
+        xssProbe: null, corsProbe: null, exposure: [], meta: [], redirect: null, crtsh: null,
+      },
       error: `Fetch failed: ${err}`,
     };
   }
 
-  const headerRows = analyseHeaders(response.headers);
+  const primaryHeadersDump = dumpHeaders(response.headers);
+  const ct = response.headers.get("content-type") ?? "";
   const setCookies = (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+
+  let html = "";
+  let bodyBytes = 0;
+  let bodyTruncated = false;
+  if (ct.includes("text/html") && response.status < 400) {
+    const snippet = await readSnippet(response, 500_000);
+    html = snippet.text;
+    bodyBytes = snippet.bytes;
+    bodyTruncated = snippet.truncated;
+  } else {
+    try { await response.arrayBuffer(); } catch { /* ignore */ }
+  }
+
+  const primaryEvidence: PrimaryResponseEvidence = {
+    requestUrl: url.toString(),
+    finalUrl: response.url || null,
+    status: response.status,
+    statusText: response.statusText,
+    httpVersion: null,
+    redirected: response.redirected,
+    contentType: ct || null,
+    bodyBytes, bodyTruncated,
+    bodySnippet: html.slice(0, 12000),
+    headers: primaryHeadersDump,
+  };
+
+  const headerRows = analyseHeaders(response.headers);
   const cookieRows = parseSetCookies(setCookies, url.host);
   let tls = analyseTls(url, response.headers);
 
-  const ct = response.headers.get("content-type") ?? "";
-  let html = "";
-  if (ct.includes("text/html") && response.status < 400) {
-    try { html = (await response.text()).slice(0, 500_000); } catch { /* ignore */ }
-  }
-
-  // Run all deep probes in parallel
-  const [certTls, reflected, cors, exposure, meta, redirect] = await Promise.all([
+  const [certResult, reflected, cors, exposure, meta, redirect] = await Promise.all([
     enrichTlsWithCert(tls),
     probeReflectedXss(url),
     probeCors(url),
@@ -583,24 +703,20 @@ async function performScan(rawUrl: string): Promise<Omit<ScanResult, "id" | "cre
     probeMeta(url),
     probeRedirect(url),
   ]);
-  tls = certTls;
+  tls = certResult.tls;
 
-  const csrfRows = analyseCsrf(html, cookieRows, url);
-  const xssRows = [...analyseXss(headerRows), ...reflected, ...cors];
+  const csrfResult = analyseCsrf(html, cookieRows, url);
+  const xssRows = [...analyseXss(headerRows), ...reflected.cases, ...cors.cases];
   const sessionRows = analyseSessions(cookieRows);
-  const reconRows: ReconCheck[] = [
-    ...exposure,
-    ...meta,
-    ...analyseMixedContent(html, url),
-    ...redirect,
-  ];
+  const mixed = analyseMixedContent(html, url);
+  const reconRows: ReconCheck[] = [...exposure.rows, ...meta.rows, ...mixed.rows, ...redirect.rows];
 
   const scores: ScoreBreakdown = {
     headers: scoreRows(headerRows),
     cookies: scoreRows(cookieRows),
     tls: tls.severity === "pass" ? 95 : tls.severity === "warn" ? 70 : 30,
     sessions: scoreRows(sessionRows.map((s) => ({ severity: s.status }))),
-    csrf: scoreRows(csrfRows.filter((c) => c.severity !== "info")),
+    csrf: scoreRows(csrfResult.rows.filter((c) => c.severity !== "info")),
     xss: scoreRows(xssRows),
     recon: scoreRows(reconRows.filter((r) => r.severity !== "info")),
   };
@@ -608,12 +724,25 @@ async function performScan(rawUrl: string): Promise<Omit<ScanResult, "id" | "cre
     (scores.headers + scores.cookies + scores.tls + scores.sessions + scores.csrf + scores.xss + scores.recon) / 7,
   );
 
+  const evidence: ScanEvidence = {
+    primary: primaryEvidence,
+    setCookies,
+    forms: csrfResult.forms,
+    mixedContentRefs: mixed.refs,
+    xssProbe: reflected.evidence,
+    corsProbe: cors.evidence,
+    exposure: exposure.evidence,
+    meta: meta.evidence,
+    redirect: redirect.evidence,
+    crtsh: certResult.entries,
+  };
+
   return {
     targetUrl: url.toString(), targetHost: url.host, status: "complete",
     durationMs: Date.now() - start, overallScore, scores,
     headers: headerRows, cookies: cookieRows, tls,
-    csrf: csrfRows, xss: xssRows, sessions: sessionRows, recon: reconRows,
-    error: null,
+    csrf: csrfResult.rows, xss: xssRows, sessions: sessionRows, recon: reconRows,
+    evidence, error: null,
   };
 }
 
@@ -637,6 +766,7 @@ export const runScan = createServerFn({ method: "POST" })
       xss: scan.xss,
       sessions: scan.sessions,
       recon: scan.recon,
+      evidence: scan.evidence,
       error: scan.error,
     };
     const { data: row, error } = await context.supabase

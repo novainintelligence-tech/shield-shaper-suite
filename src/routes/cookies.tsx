@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { ScanRunner } from "@/components/scan-runner";
 import { EmptyScanState } from "@/components/empty-scan-state";
+import { RawBlock } from "@/components/raw-block";
 import { useLatestScan } from "@/hooks/use-scans";
 
 export const Route = createFileRoute("/cookies")({
@@ -132,6 +133,24 @@ function CookiesPage() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Raw Set-Cookie headers</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Exact bytes returned by the target — unedited, in the order received.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {latest.evidence.setCookies.length === 0 ? (
+                <RawBlock title="Set-Cookie">{""}</RawBlock>
+              ) : (
+                latest.evidence.setCookies.map((line, i) => (
+                  <RawBlock key={i} title={`Set-Cookie #${i + 1}`}>{line}</RawBlock>
+                ))
+              )}
             </CardContent>
           </Card>
         </>

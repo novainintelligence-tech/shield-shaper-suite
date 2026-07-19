@@ -19,6 +19,7 @@ export interface CookieRow {
   jsAccessible: boolean;
   severity: Severity;
   note?: string;
+  raw?: string;
 }
 
 export interface TlsResult {
@@ -34,6 +35,7 @@ export interface TlsResult {
   daysRemaining: number | null;
   severity: Severity;
   note: string;
+  rawHstsHeader?: string | null;
 }
 
 export interface CsrfCheck {
@@ -43,6 +45,7 @@ export interface CsrfCheck {
   sameSiteHint: "Strict" | "Lax" | "None" | "Unknown";
   severity: Severity;
   note: string;
+  rawForm?: string;
 }
 
 export interface XssCase {
@@ -80,6 +83,84 @@ export interface ScoreBreakdown {
   recon: number;
 }
 
+// ---- Raw evidence captured during the scan ----
+
+export type HeadersDump = Record<string, string>;
+
+export interface PrimaryResponseEvidence {
+  requestUrl: string;
+  finalUrl: string | null;
+  status: number;
+  statusText: string;
+  httpVersion: string | null;
+  redirected: boolean;
+  contentType: string | null;
+  bodyBytes: number;
+  bodyTruncated: boolean;
+  bodySnippet: string;
+  headers: HeadersDump;
+}
+
+export interface PathProbeEvidence {
+  path: string;
+  requestUrl: string;
+  method: string;
+  status: number;
+  statusText: string;
+  headers: HeadersDump;
+  bodySnippet: string;
+  bodyBytes: number;
+}
+
+export interface XssProbeEvidence {
+  requestUrl: string;
+  payload: string;
+  canary: string;
+  status: number;
+  statusText: string;
+  contentType: string | null;
+  headers: HeadersDump;
+  reflectionMatch: string | null;
+  bodySnippet: string;
+}
+
+export interface CorsProbeEvidence {
+  requestUrl: string;
+  requestOrigin: string;
+  status: number;
+  statusText: string;
+  headers: HeadersDump;
+}
+
+export interface RedirectProbeEvidence {
+  requestUrl: string;
+  status: number;
+  statusText: string;
+  location: string | null;
+  headers: HeadersDump;
+}
+
+export interface CrtShEntry {
+  issuer_name?: string;
+  not_before?: string;
+  not_after?: string;
+  common_name?: string;
+  name_value?: string;
+}
+
+export interface ScanEvidence {
+  primary: PrimaryResponseEvidence | null;
+  setCookies: string[];
+  forms: string[];
+  mixedContentRefs: string[];
+  xssProbe: XssProbeEvidence | null;
+  corsProbe: CorsProbeEvidence | null;
+  exposure: PathProbeEvidence[];
+  meta: PathProbeEvidence[];
+  redirect: RedirectProbeEvidence | null;
+  crtsh: CrtShEntry[] | null;
+}
+
 export interface ScanResult {
   id: string;
   targetUrl: string;
@@ -95,6 +176,7 @@ export interface ScanResult {
   xss: XssCase[];
   sessions: SessionCheck[];
   recon: ReconCheck[];
+  evidence: ScanEvidence;
   error: string | null;
   createdAt: string;
 }
