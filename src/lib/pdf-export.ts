@@ -20,7 +20,8 @@ function text(doc: jsPDF, c: Cursor, str: string, opts?: { size?: number; bold?:
   const size = opts?.size ?? 10;
   doc.setFontSize(size);
   doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
-  doc.setTextColor(...(opts?.color ?? [30, 41, 59]));
+  const [r, g, b] = opts?.color ?? [30, 41, 59];
+  doc.setTextColor(r, g, b);
   const pageW = doc.internal.pageSize.getWidth();
   const wrapped = doc.splitTextToSize(str, pageW - M * 2);
   ensureSpace(doc, c, wrapped.length * (size + 2));
@@ -54,7 +55,8 @@ function row(doc: jsPDF, c: Cursor, label: string, value: string, severity?: str
   ensureSpace(doc, c, LINE);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.setTextColor(...(severity ? sev(severity) : [30, 41, 59]));
+  const [rr, gg, bb] = severity ? sev(severity) : [30, 41, 59];
+  doc.setTextColor(rr, gg, bb);
   doc.text(`[${severity?.toUpperCase() ?? "•"}]`, M, c.y);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 41, 59);
