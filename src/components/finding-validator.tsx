@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { RawBlock } from "@/components/raw-block";
 import type { Finding } from "@/lib/engagement";
 import { runValidation, type ValidationResult, type Verdict } from "@/lib/validator.functions";
+import { toCurl } from "@/lib/validator-command";
 
 const ACTIVE_PREFIXES = ["csrf-"];
 
