@@ -846,6 +846,12 @@ export const runStandalonePoc = createServerFn({ method: "POST" })
         case "forwarded-user":return wrap(false, await pocForwardedUser(data.url));
         case "original-url":  return wrap(false, await pocOriginalUrl(data.url));
         case "jwt-alg-none":  return wrap(false, await pocJwtAlgNone(data.url));
+        case "sql-injection": return wrap(true,  await pocSqlInjection(data.url));
+        case "ssrf":          return wrap(true,  await pocSsrf(data.url));
+        case "path-traversal":return wrap(true,  await pocPathTraversal(data.url));
+        case "graphql-introspection": return wrap(false, await pocGraphqlIntrospection(data.url));
+        case "idor":          return wrap(true,  await pocIdorEnumeration(data.url));
+        case "nosql-injection":return wrap(true, await pocNoSqlInjection(data.url));
         default:              return wrap(false, { verdict: "error", summary: `Unhandled PoC id`, poc: "", steps: [] });
       }
     } catch (e) {
