@@ -15,6 +15,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as ReconRouteImport } from './routes/recon'
+import { Route as ReauthRouteImport } from './routes/reauth'
 import { Route as MethodologyRouteImport } from './routes/methodology'
 import { Route as LiveSessionRouteImport } from './routes/live-session'
 import { Route as HeadersRouteImport } from './routes/headers'
@@ -53,6 +54,11 @@ const ReportRoute = ReportRouteImport.update({
 const ReconRoute = ReconRouteImport.update({
   id: '/recon',
   path: '/recon',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReauthRoute = ReauthRouteImport.update({
+  id: '/reauth',
+  path: '/reauth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MethodologyRoute = MethodologyRouteImport.update({
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/headers': typeof HeadersRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
+  '/reauth': typeof ReauthRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/headers': typeof HeadersRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
+  '/reauth': typeof ReauthRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/headers': typeof HeadersRoute
   '/live-session': typeof LiveSessionRoute
   '/methodology': typeof MethodologyRoute
+  '/reauth': typeof ReauthRoute
   '/recon': typeof ReconRoute
   '/report': typeof ReportRoute
   '/sessions': typeof SessionsRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/headers'
     | '/live-session'
     | '/methodology'
+    | '/reauth'
     | '/recon'
     | '/report'
     | '/sessions'
@@ -181,6 +191,7 @@ export interface FileRouteTypes {
     | '/headers'
     | '/live-session'
     | '/methodology'
+    | '/reauth'
     | '/recon'
     | '/report'
     | '/sessions'
@@ -198,6 +209,7 @@ export interface FileRouteTypes {
     | '/headers'
     | '/live-session'
     | '/methodology'
+    | '/reauth'
     | '/recon'
     | '/report'
     | '/sessions'
@@ -216,6 +228,7 @@ export interface RootRouteChildren {
   HeadersRoute: typeof HeadersRoute
   LiveSessionRoute: typeof LiveSessionRoute
   MethodologyRoute: typeof MethodologyRoute
+  ReauthRoute: typeof ReauthRoute
   ReconRoute: typeof ReconRoute
   ReportRoute: typeof ReportRoute
   SessionsRoute: typeof SessionsRoute
@@ -267,6 +280,13 @@ declare module '@tanstack/react-router' {
       path: '/recon'
       fullPath: '/recon'
       preLoaderRoute: typeof ReconRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reauth': {
+      id: '/reauth'
+      path: '/reauth'
+      fullPath: '/reauth'
+      preLoaderRoute: typeof ReauthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/methodology': {
@@ -344,6 +364,7 @@ const rootRouteChildren: RootRouteChildren = {
   HeadersRoute: HeadersRoute,
   LiveSessionRoute: LiveSessionRoute,
   MethodologyRoute: MethodologyRoute,
+  ReauthRoute: ReauthRoute,
   ReconRoute: ReconRoute,
   ReportRoute: ReportRoute,
   SessionsRoute: SessionsRoute,
