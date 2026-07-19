@@ -109,6 +109,10 @@ function severityCounts(items: { severity: Severity }[]): PhaseEvidence {
   return e;
 }
 
+function sessionsAsSeverity(scan: ScanResult): { severity: Severity }[] {
+  return scan.sessions.map((s) => ({ severity: s.status }));
+}
+
 function statusFrom(ev: PhaseEvidence, gated: boolean): PhaseStatus["status"] {
   if (gated) return "not-started";
   const total = ev.pass + ev.warn + ev.fail;
@@ -138,13 +142,13 @@ export function computePhases(scan: ScanResult | null | undefined, scopeConfirme
         status = statusFrom(ev, false);
         break;
       case "vuln-id":
-        ev = severityCounts([...scan.xss, ...scan.sessions]);
+        ev = severityCounts([...scan.xss, ...sessionsAsSeverity(scan)]);
         status = statusFrom(ev, false);
         break;
       case "validation": {
         ev = severityCounts([
           ...scan.headers, ...scan.cookies, ...scan.csrf,
-          ...scan.xss, ...scan.sessions, ...scan.recon,
+          ...scan.xss, ...sessionsAsSeverity(scan), ...scan.recon,
         ]);
         status = statusFrom(ev, false);
         break;

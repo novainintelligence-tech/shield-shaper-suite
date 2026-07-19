@@ -162,7 +162,7 @@ function ReportPage() {
                   </div>
                   <div className="md:col-span-2">
                     <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Evidence</div>
-                    <RawBlock content={f.evidence} />
+                    <RawBlock title="evidence">{f.evidence}</RawBlock>
                   </div>
                   <div className="md:col-span-3">
                     <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Remediation</div>
