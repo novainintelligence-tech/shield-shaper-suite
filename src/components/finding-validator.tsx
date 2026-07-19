@@ -124,6 +124,12 @@ export function FindingValidator({ finding, targetUrl, globalAuthorize, presetRe
               <div className="text-xs font-mono">
                 {s.method} {s.url} → {s.status ?? "no response"}{s.error ? ` (${s.error})` : ""}
               </div>
+              <RawBlock title="command · reproduces this request exactly (curl)">
+                {toCurl(s)}
+              </RawBlock>
+              <div className="text-[11px] text-muted-foreground">
+                Runtime: <code>fetch()</code> with <code>redirect: "manual"</code>, 8s timeout, response headers &amp; body captured verbatim.
+              </div>
               {Object.keys(s.responseHeaders).length > 0 && (
                 <RawBlock title="response headers">
                   {Object.entries(s.responseHeaders).map(([k, v]) => `${k}: ${v}`).join("\n")}
