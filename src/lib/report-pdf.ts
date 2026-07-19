@@ -67,19 +67,21 @@ function finding(doc: jsPDF, c: Cursor, i: number, f: Finding, variant: ReportVa
 
 export type ReportVariant = "executive" | "technical";
 
-export function generateEngagementPdf(scan: ScanResult): jsPDF {
+export function generateEngagementPdf(scan: ScanResult, variant: ReportVariant = "technical"): jsPDF {
   const s = buildEngagementSummary(scan);
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const c: Cursor = { y: M };
+  const isExec = variant === "executive";
 
   // Cover
   text(doc, c, "NOVAIN Security Lab", { size: 20, bold: true, color: [15, 23, 42] });
-  text(doc, c, "Penetration Test Engagement Report", { size: 12, color: [82, 96, 122] });
+  text(doc, c, isExec ? "Executive Security Summary" : "Penetration Test Engagement Report", { size: 12, color: [82, 96, 122] });
   c.y += 10;
   text(doc, c, `Target: ${s.targetUrl}`, { bold: true });
   text(doc, c, `Host:   ${s.targetHost}`);
   text(doc, c, `Report date: ${new Date().toLocaleString()}`);
   text(doc, c, `Scan performed: ${new Date(s.scannedAt).toLocaleString()}`);
+  text(doc, c, `Report variant: ${isExec ? "Executive (non-technical)" : "Technical (full evidence)"}`, { size: 9, color: [110, 120, 140] });
   rule(doc, c);
 
   // 1. Executive summary
@@ -93,64 +95,77 @@ export function generateEngagementPdf(scan: ScanResult): jsPDF {
     for (const st of s.strengths) text(doc, c, `• ${st}`);
   }
 
-  // 2. Scope & methodology
-  h(doc, c, "2. Scope & Methodology");
-  text(doc, c, `In-scope target: ${s.targetUrl}`);
-  text(doc, c,
-    "Methodology follows a seven-phase workflow adapted from OWASP WSTG, OSSTMM, PTES, and NIST SP 800-115: Scoping & Rules of Engagement, Reconnaissance, Enumeration, Vulnerability Identification, Validation, Post-Validation Analysis, and Reporting. Testing was limited to passive and safe active checks issued by the NOVAIN Security Lab scanner against the authorized target only.");
-
-  // 3. Asset inventory
-  h(doc, c, "3. Asset Inventory");
-  for (const a of s.assets) text(doc, c, `• ${a}`);
-
-  // 4. Attack surface summary
-  h(doc, c, "4. Attack Surface Summary");
-  text(doc, c, `Headers evaluated: ${scan.headers.length}`);
-  text(doc, c, `Cookies observed: ${scan.cookies.length}`);
-  text(doc, c, `Forms detected: ${scan.csrf.length}`);
-  text(doc, c, `XSS test cases: ${scan.xss.length}`);
-  text(doc, c, `Session checks: ${scan.sessions.length}`);
-  text(doc, c, `Reconnaissance checks: ${scan.recon.length}`);
-
-  // 5. Confirmed findings
-  h(doc, c, `5. Confirmed Findings (${s.findings.length})`);
-  if (s.findings.length === 0) {
-    text(doc, c, "No confirmed findings from automated checks. Manual testing recommended for business-logic coverage.");
-  } else {
-    s.findings.forEach((f, i) => finding(doc, c, i + 1, f));
-  }
-
-  // 6. Risk assessment
-  h(doc, c, "6. Risk Assessment");
-  text(doc, c,
-    "Ratings combine automated severity with typical business impact: authentication and transport issues are treated as High, cookie flag issues and exposed endpoints as High/Medium, and hardening gaps (headers, meta files) as Low. CVSS values are indicative and should be re-scored per environment.");
-
-  // 7. Remediation recommendations
-  h(doc, c, "7. Remediation Recommendations");
-  if (s.findings.length === 0) {
-    text(doc, c, "Maintain current posture. Re-run the scan after any material change to the origin, CDN, or auth stack.");
-  } else {
-    const groups = new Map<string, Finding[]>();
-    for (const f of s.findings) {
-      const arr = groups.get(f.module) ?? [];
-      arr.push(f);
-      groups.set(f.module, arr);
+  if (isExec) {
+    // Executive: prioritized action list only, no evidence dump.
+    h(doc, c, "2. Prioritized Actions");
+    const top = s.findings.slice(0, 8);
+    if (top.length === 0) {
+      text(doc, c, "No actions required from automated coverage. Maintain current posture.");
+    } else {
+      top.forEach((f, i) => {
+        text(doc, c, `${i + 1}. [${f.risk}] ${f.title}`, { bold: true, color: riskColor(f.risk) });
+        text(doc, c, `Business impact: ${f.impact}`, { size: 9 });
+        text(doc, c, `Recommended fix: ${f.remediation}`, { size: 9 });
+        c.y += 4;
+      });
     }
-    for (const [mod, arr] of groups) {
-      text(doc, c, `${mod} (${arr.length})`, { bold: true });
-      text(doc, c, arr[0].remediation, { size: 9 });
-      c.y += 4;
+
+    h(doc, c, "3. Residual Risk & Next Steps");
+    text(doc, c,
+      "Automated scanning cannot confirm business-logic flaws, chained multi-step exploits, authenticated-only surfaces, or issues behind rate limits and WAFs. A manual engagement is recommended to cover authenticated workflows, privilege boundaries, and application-specific logic. Re-run the assessment after remediation to confirm resolution.");
+  } else {
+    // 2. Scope & methodology
+    h(doc, c, "2. Scope & Methodology");
+    text(doc, c, `In-scope target: ${s.targetUrl}`);
+    text(doc, c,
+      "Methodology follows a seven-phase workflow adapted from OWASP WSTG, OSSTMM, PTES, and NIST SP 800-115: Scoping & Rules of Engagement, Reconnaissance, Enumeration, Vulnerability Identification, Validation, Post-Validation Analysis, and Reporting. Testing was limited to passive and safe active checks issued by the NOVAIN Security Lab scanner against the authorized target only.");
+
+    h(doc, c, "3. Asset Inventory");
+    for (const a of s.assets) text(doc, c, `• ${a}`);
+
+    h(doc, c, "4. Attack Surface Summary");
+    text(doc, c, `Headers evaluated: ${scan.headers.length}`);
+    text(doc, c, `Cookies observed: ${scan.cookies.length}`);
+    text(doc, c, `Forms detected: ${scan.csrf.length}`);
+    text(doc, c, `XSS test cases: ${scan.xss.length}`);
+    text(doc, c, `Session checks: ${scan.sessions.length}`);
+    text(doc, c, `Reconnaissance checks: ${scan.recon.length}`);
+
+    h(doc, c, `5. Confirmed Findings (${s.findings.length})`);
+    if (s.findings.length === 0) {
+      text(doc, c, "No confirmed findings from automated checks. Manual testing recommended for business-logic coverage.");
+    } else {
+      s.findings.forEach((f, i) => finding(doc, c, i + 1, f, variant));
     }
+
+    h(doc, c, "6. Risk Assessment (CVSS 3.1)");
+    text(doc, c,
+      "Findings are scored with CVSS 3.1 base metrics. Vectors are attached to each finding for re-scoring per environment. Ratings map to Critical (≥9.0), High (7.0–8.9), Medium (4.0–6.9), Low (0.1–3.9), Info (0.0).");
+
+    h(doc, c, "7. Remediation Recommendations");
+    if (s.findings.length === 0) {
+      text(doc, c, "Maintain current posture. Re-run the scan after any material change to the origin, CDN, or auth stack.");
+    } else {
+      const groups = new Map<string, Finding[]>();
+      for (const f of s.findings) {
+        const arr = groups.get(f.module) ?? [];
+        arr.push(f);
+        groups.set(f.module, arr);
+      }
+      for (const [mod, arr] of groups) {
+        text(doc, c, `${mod} (${arr.length})`, { bold: true });
+        text(doc, c, arr[0].remediation, { size: 9 });
+        c.y += 4;
+      }
+    }
+
+    h(doc, c, "8. Residual Risks");
+    text(doc, c,
+      "Automated scanning cannot confirm business-logic flaws, chained multi-step exploits, authenticated-only surfaces, or issues behind rate limits and WAFs. Consider a manual engagement to cover authenticated workflows, privilege boundaries, and application-specific logic.");
+
+    h(doc, c, "9. Retest Checklist");
+    text(doc, c, "After remediation, re-run the scan for the target and confirm each finding above has been resolved. Attach the follow-up report to this document for change history.");
   }
-
-  // 8. Residual risks
-  h(doc, c, "8. Residual Risks");
-  text(doc, c,
-    "Automated scanning cannot confirm business-logic flaws, chained multi-step exploits, authenticated-only surfaces, or issues behind rate limits and WAFs. Consider a manual engagement to cover authenticated workflows, privilege boundaries, and application-specific logic.");
-
-  // 9. Retest checklist
-  h(doc, c, "9. Retest Checklist");
-  text(doc, c, "After remediation, re-run the scan for the target and confirm each finding above has been resolved. Attach the follow-up report to this document for change history.");
 
   // Footer
   const pages = doc.getNumberOfPages();
@@ -159,7 +174,7 @@ export function generateEngagementPdf(scan: ScanResult): jsPDF {
     doc.setFontSize(8);
     doc.setTextColor(150, 160, 180);
     doc.text(
-      `NSL Engagement Report · ${s.targetHost} · page ${i}/${pages}`,
+      `NSL ${isExec ? "Executive Summary" : "Engagement Report"} · ${s.targetHost} · page ${i}/${pages}`,
       M, doc.internal.pageSize.getHeight() - 20,
     );
   }
@@ -167,8 +182,9 @@ export function generateEngagementPdf(scan: ScanResult): jsPDF {
   return doc;
 }
 
-export function downloadEngagementPdf(scan: ScanResult) {
-  const doc = generateEngagementPdf(scan);
+export function downloadEngagementPdf(scan: ScanResult, variant: ReportVariant = "technical") {
+  const doc = generateEngagementPdf(scan, variant);
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  doc.save(`nsl-engagement-${scan.targetHost}-${ts}.pdf`);
+  doc.save(`nsl-${variant}-${scan.targetHost}-${ts}.pdf`);
 }
+
