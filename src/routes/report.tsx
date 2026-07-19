@@ -206,10 +206,11 @@ function ReportPage() {
               <div key={f.id} className="rounded-md border border-border/60 bg-surface/40 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className={riskClass[f.risk]}>{f.risk}</Badge>
-                  <span className="font-mono text-xs text-muted-foreground">CVSS {f.cvss.toFixed(1)}</span>
+                  <span className="font-mono text-xs text-muted-foreground">CVSS 3.1 {f.cvss.toFixed(1)}</span>
                   <span className="font-mono text-xs text-muted-foreground">·</span>
                   <span className="font-mono text-xs text-muted-foreground">{f.module}</span>
                 </div>
+                <div className="mt-1 font-mono text-[10px] text-muted-foreground/80 break-all">{f.cvssVector}</div>
                 <h3 className="mt-1 text-sm font-semibold">{i + 1}. {f.title}</h3>
                 <Separator className="my-3" />
                 <div className="grid gap-3 md:grid-cols-3">
