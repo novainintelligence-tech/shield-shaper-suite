@@ -641,6 +641,10 @@ export const runStandalonePoc = createServerFn({ method: "POST" })
         case "headers":       return wrap(false, await pocHeadersAudit(data.url));
         case "redirect-chain":return wrap(false, await pocRedirect(data.url));
         case "verb-tampering":return wrap(true,  await pocVerbTampering(data.url));
+        case "anon-access":   return wrap(false, await pocAnonAccess(data.url));
+        case "forwarded-user":return wrap(false, await pocForwardedUser(data.url));
+        case "original-url":  return wrap(false, await pocOriginalUrl(data.url));
+        case "jwt-alg-none":  return wrap(false, await pocJwtAlgNone(data.url));
         default:              return wrap(false, { verdict: "error", summary: `Unhandled PoC id`, poc: "", steps: [] });
       }
     } catch (e) {
