@@ -4,8 +4,10 @@ import {
   Bookmark,
   ClipboardPaste,
   Copy,
+  Download,
   FileWarning,
   KeyRound,
+  Puzzle,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
@@ -116,6 +118,22 @@ function LiveSessionPage() {
     }
   };
 
+  const downloadExtension = async () => {
+    try {
+      const res = await fetch("/nsl-extension.zip");
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "nsl-extension.zip";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success("Extension downloaded", { description: "Unzip, then load unpacked at chrome://extensions" });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
   const originMatches = !host || !analysis?.origin || analysis.origin.includes(host);
 
   return (
@@ -134,6 +152,33 @@ function LiveSessionPage() {
             <p>The bookmarklet runs on the target tab and captures only what JavaScript on that page can see: <code className="font-mono">document.cookie</code> (non-HttpOnly only), <code className="font-mono">localStorage</code>, and <code className="font-mono">sessionStorage</code>. Attributes such as HttpOnly / Secure / SameSite are enriched from the server-side scan's <code className="font-mono">Set-Cookie</code> evidence.</p>
             <p><b>Only run this on sites you own or are authorized to test.</b> The snapshot may contain live session tokens — treat it like a password.</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/40 bg-primary/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Puzzle className="h-4 w-4 text-primary" /> Browser extension (recommended)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            The bookmarklet cannot see <b>HttpOnly</b> cookies. The NSL Capture extension uses the browser's <code className="font-mono">chrome.cookies</code> API to read every cookie — including HttpOnly — plus <code className="font-mono">localStorage</code> and <code className="font-mono">sessionStorage</code> — from your active tab or every open tab in one click.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={downloadExtension}>
+              <Download className="h-3.5 w-3.5" /> Download NSL Capture (.zip)
+            </Button>
+          </div>
+          <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
+            <li>Unzip the downloaded file.</li>
+            <li>Open <code className="font-mono">chrome://extensions</code> (Chrome, Edge, Brave, Arc, Opera).</li>
+            <li>Enable <b>Developer mode</b> (top-right toggle).</li>
+            <li>Click <b>Load unpacked</b> and pick the unzipped folder.</li>
+            <li>Open the extension popup on your logged-in tab → <b>Active tab</b> or <b>All open tabs</b> → <b>Copy JSON</b>.</li>
+            <li>Paste the JSON into Step 2 below.</li>
+          </ol>
+          <p className="text-xs text-warning">Only run against sites you own or are authorized to test. The capture contains live session tokens.</p>
         </CardContent>
       </Card>
 
