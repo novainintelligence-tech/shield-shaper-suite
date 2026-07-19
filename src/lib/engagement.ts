@@ -166,14 +166,10 @@ export function computePhases(scan: ScanResult | null | undefined, scopeConfirme
   });
 }
 
-function ratingFor(severity: Severity, module: string): { risk: RiskRating; cvss: number } {
-  if (severity === "fail") {
-    if (module === "TLS" || module === "XSS" || module === "CSRF") return { risk: "High", cvss: 7.5 };
-    if (module === "Exposure" || module === "Recon") return { risk: "High", cvss: 7.2 };
-    return { risk: "Medium", cvss: 6.1 };
-  }
-  if (severity === "warn") return { risk: "Low", cvss: 3.7 };
-  return { risk: "Info", cvss: 0 };
+function ratingFor(severity: Severity, module: string): { risk: RiskRating; cvss: number; cvssVector: string; cvssMetrics: Cvss31Metrics } {
+  const sev = severity === "pass" ? "pass" : severity === "warn" ? "warn" : "fail";
+  const r = rateFinding(module, sev);
+  return { risk: r.severity, cvss: r.score, cvssVector: r.vector, cvssMetrics: r.metrics };
 }
 
 const REMEDIATION: Record<string, string> = {
@@ -191,10 +187,10 @@ export function buildFindings(scan: ScanResult): Finding[] {
 
   for (const h of scan.headers) {
     if (h.severity === "pass") continue;
-    const { risk, cvss } = ratingFor(h.severity, "Headers");
+    const r = ratingFor(h.severity, "Headers");
     out.push({
       id: `hdr-${h.name}`, module: "HTTP Headers", title: `${h.name} — ${h.note}`,
-      severity: h.severity, risk, cvss,
+      severity: h.severity, ...r,
       evidence: `${h.name}: ${h.value ?? "— missing —"}\nExpected: ${h.expected}`,
       impact: "Weakens the browser's built-in protections against XSS, clickjacking, transport downgrade, or MIME-sniffing attacks.",
       remediation: REMEDIATION.Headers,
@@ -202,20 +198,20 @@ export function buildFindings(scan: ScanResult): Finding[] {
   }
   for (const c of scan.cookies) {
     if (c.severity === "pass") continue;
-    const { risk, cvss } = ratingFor(c.severity, "Cookies");
+    const r = ratingFor(c.severity, "Cookies");
     out.push({
       id: `cookie-${c.name}`, module: "Cookies", title: `${c.name} — ${c.note ?? "insecure flags"}`,
-      severity: c.severity, risk, cvss,
+      severity: c.severity, ...r,
       evidence: c.raw ?? `${c.name}  HttpOnly=${c.httpOnly} Secure=${c.secure} SameSite=${c.sameSite}`,
       impact: "Session or auth cookies may be stolen via network sniffing or scripts, enabling account takeover.",
       remediation: REMEDIATION.Cookies,
     });
   }
   if (scan.tls.severity !== "pass") {
-    const { risk, cvss } = ratingFor(scan.tls.severity, "TLS");
+    const r = ratingFor(scan.tls.severity, "TLS");
     out.push({
       id: "tls-posture", module: "TLS", title: `TLS / HSTS posture — ${scan.tls.note}`,
-      severity: scan.tls.severity, risk, cvss,
+      severity: scan.tls.severity, ...r,
       evidence: `Scheme=${scan.tls.scheme} HSTS=${scan.tls.hstsPresent} max-age=${scan.tls.hstsMaxAge ?? "—"} preload=${scan.tls.hstsPreloaded}\nIssuer=${scan.tls.issuer ?? "—"} Valid=${scan.tls.validFrom ?? "—"} → ${scan.tls.validTo ?? "—"}`,
       impact: "Traffic can be intercepted, downgraded, or tampered with; users may be phished via cert or protocol issues.",
       remediation: REMEDIATION.TLS,
@@ -223,10 +219,10 @@ export function buildFindings(scan: ScanResult): Finding[] {
   }
   for (const cs of scan.csrf) {
     if (cs.severity === "pass") continue;
-    const { risk, cvss } = ratingFor(cs.severity, "CSRF");
+    const r = ratingFor(cs.severity, "CSRF");
     out.push({
       id: `csrf-${cs.endpoint}`, module: "CSRF", title: `${cs.method} ${cs.endpoint}`,
-      severity: cs.severity, risk, cvss,
+      severity: cs.severity, ...r,
       evidence: `${cs.note}\nToken=${cs.tokenFound} SameSite=${cs.sameSiteHint}${cs.rawForm ? `\n\n${cs.rawForm.slice(0, 500)}` : ""}`,
       impact: "An authenticated user could be tricked into performing this action from an attacker-controlled page.",
       remediation: REMEDIATION.CSRF,
@@ -234,31 +230,31 @@ export function buildFindings(scan: ScanResult): Finding[] {
   }
   for (const x of scan.xss) {
     if (x.severity === "pass") continue;
-    const { risk, cvss } = ratingFor(x.severity, "XSS");
+    const r = ratingFor(x.severity, "XSS");
     out.push({
       id: `xss-${x.id}`, module: "XSS", title: `${x.category} — ${x.vector}`,
-      severity: x.severity, risk, cvss, evidence: x.detail,
+      severity: x.severity, ...r, evidence: x.detail,
       impact: "Script execution in a victim's browser leads to session theft, credential capture, or full account takeover.",
       remediation: REMEDIATION.XSS,
     });
   }
   for (const s of scan.sessions) {
     if (s.status === "pass") continue;
-    const { risk, cvss } = ratingFor(s.status, "Session");
+    const r = ratingFor(s.status, "Session");
     out.push({
       id: `session-${s.name}`, module: "Session", title: s.name,
-      severity: s.status, risk, cvss, evidence: s.observation,
+      severity: s.status, ...r, evidence: s.observation,
       impact: "Weak session handling can allow session fixation, hijacking, or prolonged access after logout.",
       remediation: REMEDIATION.Session,
     });
   }
-  for (const r of scan.recon) {
-    if (r.severity === "pass") continue;
-    const { risk, cvss } = ratingFor(r.severity, r.category === "exposure" ? "Exposure" : "Recon");
+  for (const rc of scan.recon) {
+    if (rc.severity === "pass") continue;
+    const r = ratingFor(rc.severity, rc.category === "exposure" ? "Exposure" : "Recon");
     out.push({
-      id: `recon-${r.id}`, module: `Recon · ${r.category}`, title: `${r.name}${r.target ? ` (${r.target})` : ""}`,
-      severity: r.severity, risk, cvss, evidence: r.note,
-      impact: r.category === "exposure"
+      id: `recon-${rc.id}`, module: `Recon · ${rc.category}`, title: `${rc.name}${rc.target ? ` (${rc.target})` : ""}`,
+      severity: rc.severity, ...r, evidence: rc.note,
+      impact: rc.category === "exposure"
         ? "Sensitive files or configuration data are reachable without authentication."
         : "Missing hardening or metadata expands the usable attack surface.",
       remediation: REMEDIATION.Recon,
